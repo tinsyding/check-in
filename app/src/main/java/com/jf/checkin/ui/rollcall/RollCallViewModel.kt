@@ -236,6 +236,24 @@ class RollCallViewModel(
         studentRepository.resetClass(currentCode)
     }
 
+    /** 清空全校所有班级的签到状态 */
+    fun resetAllStatuses() {
+        studentRepository.resetAllStatuses()
+    }
+
+    /**
+     * 把一条历史记录恢复回主界面：切到对应班级并还原每个学生的签到状态。
+     * @return null 表示成功，否则为失败原因
+     */
+    fun restoreRecord(record: AttendanceRecord): String? {
+        if (allStudents.value.none { it.classCode == record.classCode }) {
+            return "班级 ${record.classCode} 已不在当前名单中"
+        }
+        _selectedClassCode.value = record.classCode
+        studentRepository.applyStatuses(record.statusSnapshot)
+        return null
+    }
+
     fun autoMatchClassNow(): Boolean {
         val students = allStudents.value
         if (students.isEmpty()) return false
@@ -595,7 +613,8 @@ class RollCallViewModel(
             lateCount = students.count { it.status == AttendanceStatus.LATE },
             leaveCount = students.count { it.status == AttendanceStatus.LEAVE },
             absentCount = students.count { it.status == AttendanceStatus.UNCHECKED },
-            imagePath = imageFile.absolutePath
+            imagePath = imageFile.absolutePath,
+            statusSnapshot = students.associate { it.studentId to it.status.name }
         )
         historyRepository.addRecord(record)
     }

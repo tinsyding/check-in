@@ -22,6 +22,7 @@ class UserPrefRepository(context: Context) {
         private const val KEY_MANUAL_STUDENTS = "jf_manual_students"
         private const val KEY_STUDENT_REMARKS = "jf_student_remarks"
         private const val KEY_STUDENT_MOVES = "jf_student_moves"
+        private const val KEY_ATTENDANCE_STATUSES = "jf_attendance_statuses"
     }
 
     fun getPrinterProfiles(): List<com.jf.checkin.data.model.PrinterProfile> {
@@ -211,5 +212,27 @@ class UserPrefRepository(context: Context) {
             if (k.isNotBlank() && v.isNotBlank()) obj.put(k, v)
         }
         prefs.edit().putString(KEY_STUDENT_MOVES, obj.toString()).apply()
+    }
+
+    // ---- 签到状态持久化（studentId -> status.name），重启 App 后保留 ----
+    fun getAttendanceStatuses(): Map<String, String> {
+        val jsonStr = prefs.getString(KEY_ATTENDANCE_STATUSES, null)
+        if (jsonStr.isNullOrBlank()) return emptyMap()
+        return try {
+            val obj = org.json.JSONObject(jsonStr)
+            val map = mutableMapOf<String, String>()
+            obj.keys().forEach { key -> map[key] = obj.optString(key, "") }
+            map.filterValues { it.isNotBlank() }
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
+
+    fun saveAttendanceStatuses(map: Map<String, String>) {
+        val obj = org.json.JSONObject()
+        for ((k, v) in map) {
+            if (k.isNotBlank() && v.isNotBlank()) obj.put(k, v)
+        }
+        prefs.edit().putString(KEY_ATTENDANCE_STATUSES, obj.toString()).apply()
     }
 }

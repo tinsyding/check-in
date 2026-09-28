@@ -60,6 +60,19 @@ class StudentRepository(private val prefRepo: UserPrefRepository) {
             val remark = m.remark.ifBlank { remarks[m.studentId] ?: "" }
             merged.add(if (m.remark != remark) m.copy(remark = remark) else m)
         }
+        // 叠加持久化的签到状态（重启 App 后保留）
+        val statuses = prefRepo.getAttendanceStatuses()
+        if (statuses.isNotEmpty()) {
+            for (i in merged.indices) {
+                val name = statuses[merged[i].studentId] ?: continue
+                val st = try {
+                    AttendanceStatus.valueOf(name)
+                } catch (_: Exception) {
+                    null
+                } ?: continue
+                if (merged[i].status != st) merged[i] = merged[i].copy(status = st)
+            }
+        }
         return merged
     }
 
@@ -220,6 +233,7 @@ class StudentRepository(private val prefRepo: UserPrefRepository) {
                 it
             }
         }
+        persistStatuses()
     }
 
     fun setStudentStatus(studentId: String, status: AttendanceStatus) {
@@ -230,6 +244,7 @@ class StudentRepository(private val prefRepo: UserPrefRepository) {
                 it
             }
         }
+        persistStatuses()
     }
 
     fun markAllPresent(classCode: String) {
@@ -240,6 +255,7 @@ class StudentRepository(private val prefRepo: UserPrefRepository) {
                 it
             }
         }
+        persistStatuses()
     }
 
     fun resetClass(classCode: String) {
@@ -250,6 +266,38 @@ class StudentRepository(private val prefRepo: UserPrefRepository) {
                 it
             }
         }
+        persistStatuses()
+    }
+
+    /** 按快照批量还原签到状态（历史记录恢复回主界面用，不存在的学号自动忽略） */
+    fun applyStatuses(snapshot: Map<String, String>) {
+        if (snapshot.isEmpty()) return
+        _students.value = _students.value.map { s ->
+            val name = snapshot[s.studentId] ?: return@map s
+            val st = try {
+                AttendanceStatus.valueOf(name)
+            } catch (_: Exception) {
+                null
+            } ?: return@map s
+            if (s.status == st) s else s.copy(status = st)
+        }
+        persistStatuses()
+    }
+
+    /** 清空全校所有班级的签到状态（回到未到） */
+    fun resetAllStatuses() {
+        _students.value = _students.value.map {
+            if (it.status == AttendanceStatus.UNCHECKED) it else it.copy(status = AttendanceStatus.UNCHECKED)
+        }
+        persistStatuses()
+    }
+
+    /** 只持久化非默认状态，保持 prefs 精简 */
+    private fun persistStatuses() {
+        val map = _students.value
+            .filter { it.status != AttendanceStatus.UNCHECKED }
+            .associate { it.studentId to it.status.name }
+        prefRepo.saveAttendanceStatuses(map)
     }
 
     fun clearAllStudents() {
@@ -259,5 +307,6 @@ class StudentRepository(private val prefRepo: UserPrefRepository) {
         prefRepo.saveManualStudents(emptyList())
         prefRepo.saveStudentRemarks(emptyMap())
         prefRepo.saveStudentMoves(emptyMap())
+        prefRepo.saveAttendanceStatuses(emptyMap())
     }
 }

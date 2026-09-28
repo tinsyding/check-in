@@ -1,6 +1,7 @@
 package com.jf.checkin.ui
 
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -50,7 +51,16 @@ class MainActivity : ComponentActivity() {
                         composable("history") {
                             HistoryScreen(
                                 historyRepository = historyRepo,
-                                onNavigateBack = { navController.popBackStack() }
+                                onNavigateBack = { navController.popBackStack() },
+                                onRestoreRecord = { record ->
+                                    val error = rollCallViewModel.restoreRecord(record)
+                                    Toast.makeText(
+                                        this@MainActivity,
+                                        error ?: "已将 ${record.classCode} 的签到状态恢复到主界面",
+                                        if (error == null) Toast.LENGTH_SHORT else Toast.LENGTH_LONG
+                                    ).show()
+                                    if (error == null) navController.popBackStack()
+                                }
                             )
                         }
                         composable("browser") {

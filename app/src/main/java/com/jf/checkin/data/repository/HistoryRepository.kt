@@ -27,6 +27,14 @@ class HistoryRepository(private val context: Context) {
             val list = mutableListOf<AttendanceRecord>()
             for (i in 0 until array.length()) {
                 val obj = array.getJSONObject(i)
+                val snapshotObj = obj.optJSONObject("statusSnapshot")
+                val snapshot = mutableMapOf<String, String>()
+                if (snapshotObj != null) {
+                    snapshotObj.keys().forEach { key ->
+                        val v = snapshotObj.optString(key, "")
+                        if (v.isNotBlank()) snapshot[key] = v
+                    }
+                }
                 list.add(
                     AttendanceRecord(
                         id = obj.optString("id"),
@@ -39,7 +47,8 @@ class HistoryRepository(private val context: Context) {
                         lateCount = obj.optInt("lateCount"),
                         leaveCount = obj.optInt("leaveCount"),
                         absentCount = obj.optInt("absentCount"),
-                        imagePath = obj.optString("imagePath")
+                        imagePath = obj.optString("imagePath"),
+                        statusSnapshot = snapshot
                     )
                 )
             }
@@ -65,6 +74,11 @@ class HistoryRepository(private val context: Context) {
                     put("leaveCount", r.leaveCount)
                     put("absentCount", r.absentCount)
                     put("imagePath", r.imagePath)
+                    put("statusSnapshot", JSONObject().apply {
+                        for ((k, v) in r.statusSnapshot) {
+                            if (k.isNotBlank() && v.isNotBlank()) put(k, v)
+                        }
+                    })
                 }
                 array.put(obj)
             }

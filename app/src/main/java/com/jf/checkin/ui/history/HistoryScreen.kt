@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -43,6 +44,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.jf.checkin.data.model.AttendanceRecord
 import com.jf.checkin.data.repository.HistoryRepository
 import com.jf.checkin.ui.theme.AccentBlue
 import com.jf.checkin.ui.theme.AccentGreen
@@ -56,7 +58,8 @@ import java.io.File
 @Composable
 fun HistoryScreen(
     historyRepository: HistoryRepository,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onRestoreRecord: (AttendanceRecord) -> Unit
 ) {
     val context = LocalContext.current
     val records by historyRepository.records.collectAsState()
@@ -172,6 +175,18 @@ fun HistoryScreen(
                                 horizontalArrangement = Arrangement.End,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                OutlinedButton(
+                                    onClick = { onRestoreRecord(record) },
+                                    modifier = Modifier.height(34.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp)
+                                ) {
+                                    Icon(Icons.Default.Restore, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("恢复", fontSize = 12.sp)
+                                }
+
+                                Spacer(modifier = Modifier.width(10.dp))
+
                                 OutlinedButton(
                                     onClick = {
                                         historyRepository.deleteRecord(record.id)

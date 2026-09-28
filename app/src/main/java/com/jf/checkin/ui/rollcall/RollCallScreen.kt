@@ -114,6 +114,7 @@ fun RollCallScreen(
     var remarkInput by remember { mutableStateOf("") }
     var deleteConfirmStudent by remember { mutableStateOf<com.jf.checkin.data.model.Student?>(null) }
     var moveStudent by remember { mutableStateOf<com.jf.checkin.data.model.Student?>(null) }
+    var showResetAllDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.reloadSettings()
@@ -232,6 +233,7 @@ fun RollCallScreen(
                         onDeleteManual = { student -> deleteConfirmStudent = student },
                         onToggleAllPresent = { viewModel.toggleAllPresent() },
                         onReset = { viewModel.resetCurrentClass() },
+                        onResetAll = { showResetAllDialog = true },
                         onDownloadImage = { triggerExportWithTeacherCheck { viewModel.downloadAndSaveImage(context) } },
                         onExportAndShare = { triggerExportWithTeacherCheck { viewModel.exportAndShare(context) } },
                         onShowNameplateDialog = { showNameplateDialog = true },
@@ -267,6 +269,7 @@ fun RollCallScreen(
                         onDeleteManual = { student -> deleteConfirmStudent = student },
                         onToggleAllPresent = { viewModel.toggleAllPresent() },
                         onReset = { viewModel.resetCurrentClass() },
+                        onResetAll = { showResetAllDialog = true },
                         onDownloadImage = { triggerExportWithTeacherCheck { viewModel.downloadAndSaveImage(context) } },
                         onExportAndShare = { triggerExportWithTeacherCheck { viewModel.exportAndShare(context) } },
                         onShowNameplateDialog = { showNameplateDialog = true },
@@ -285,6 +288,29 @@ fun RollCallScreen(
                 }
             }
         }
+    }
+
+    // 全部清空二次确认弹窗
+    if (showResetAllDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetAllDialog = false },
+            title = { Text("全部清空", fontWeight = FontWeight.Bold) },
+            text = { Text("将所有班级的签到状态全部清除（回到未到）？该操作不可撤销。") },
+            confirmButton = {
+                Button(onClick = {
+                    showResetAllDialog = false
+                    viewModel.resetAllStatuses()
+                    Toast.makeText(context, "已清空全部签到状态", Toast.LENGTH_SHORT).show()
+                }) {
+                    Text("确认清空")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showResetAllDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
     }
 
     // 席卡 PDF 导出与局域网直连打印弹窗
@@ -1064,6 +1090,7 @@ private fun TabletLandscapeLayout(
     onDeleteManual: (com.jf.checkin.data.model.Student) -> Unit,
     onToggleAllPresent: () -> Unit,
     onReset: () -> Unit,
+    onResetAll: () -> Unit,
     onDownloadImage: () -> Unit,
     onExportAndShare: () -> Unit,
     onShowNameplateDialog: () -> Unit,
@@ -1172,6 +1199,9 @@ private fun TabletLandscapeLayout(
                     OutlinedButton(onClick = onReset) {
                         Text("重置")
                     }
+                    OutlinedButton(onClick = onResetAll) {
+                        Text("全部清空")
+                    }
                     // 手动加人（跨班调入）
                     OutlinedButton(onClick = onShowAddStudentDialog) {
                         Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -1273,6 +1303,7 @@ private fun PhonePortraitLayout(
     onDeleteManual: (com.jf.checkin.data.model.Student) -> Unit,
     onToggleAllPresent: () -> Unit,
     onReset: () -> Unit,
+    onResetAll: () -> Unit,
     onDownloadImage: () -> Unit,
     onExportAndShare: () -> Unit,
     onShowNameplateDialog: () -> Unit,
@@ -1347,6 +1378,15 @@ private fun PhonePortraitLayout(
                     contentPadding = PaddingValues(horizontal = 7.dp)
                 ) {
                     Text(if (isAllPresent) "取消" else "全到", fontSize = 12.sp)
+                }
+                Spacer(modifier = Modifier.width(4.dp))
+                // 全部清空（所有班级签到状态回到未到）
+                OutlinedButton(
+                    onClick = onResetAll,
+                    modifier = Modifier.height(36.dp),
+                    contentPadding = PaddingValues(horizontal = 7.dp)
+                ) {
+                    Text("清空", fontSize = 12.sp)
                 }
                 Spacer(modifier = Modifier.width(4.dp))
                 // 席卡 PDF 按钮
