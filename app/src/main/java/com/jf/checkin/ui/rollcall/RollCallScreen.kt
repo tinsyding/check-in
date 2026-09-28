@@ -737,6 +737,16 @@ fun RollCallScreen(
                     ) {
                         Text("下载PDF")
                     }
+                    Button(
+                        onClick = {
+                            showNameplateDialog = false
+                            viewModel.exportAndShareNameplatePdf(context)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("分享")
+                    }
                     OutlinedButton(
                         onClick = { showNameplateDialog = false },
                         modifier = Modifier.weight(1f)
