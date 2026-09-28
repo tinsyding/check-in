@@ -1,0 +1,35 @@
+# Line-ending normalization: repo stores LF, checkout converts per-platform.
+* text=auto
+
+# Explicit text files (always normalized to LF in repo)
+*.kt text
+*.kts text
+*.java text
+*.xml text
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.gradle text eol=lf
+*.properties text eol=lf
+*.md text
+*.txt text
+*.pro text
+
+# Scripts must stay LF + executable
+gradlew text eol=lf
+*.sh text eol=lf
+
+# Binary: never touch
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary
+*.jar binary
+*.keystore binary
+*.jks binary
+*.apk binary
+*.aab binary
+*.pdf binary
+*.ttf binary
+*.otf binary

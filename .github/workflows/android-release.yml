@@ -99,9 +99,9 @@ jobs:
           echo "Using apksigner: $APKSIGNER"
           "$APKSIGNER" sign \
             --ks "$RUNNER_TEMP/release.keystore" \
-            --ks-pass:env KEYSTORE_PASSWORD \
+            --ks-pass "env:KEYSTORE_PASSWORD" \
             --ks-key-alias "$KEY_ALIAS" \
-            --key-pass:env KEY_PASSWORD \
+            --key-pass "env:KEY_PASSWORD" \
             --out app/build/outputs/apk/release/app-release-signed.apk \
             app/build/outputs/apk/release/app-release-unsigned.apk
           "$APKSIGNER" verify app/build/outputs/apk/release/app-release-signed.apk
