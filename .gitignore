@@ -1,0 +1,28 @@
+# Gradle
+.gradle/
+build/
+**/build/
+gradle-app.setting
+!gradle-wrapper.jar
+!libs/*.jar
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+*.iws
+*.ipr
+.kotlin/
+.vscode/
+*.code-workspace
+
+# Local config (contains SDK path, must not commit)
+local.properties
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Keystore
+*.jks
+*.keystore
