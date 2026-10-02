@@ -10,7 +10,7 @@ import java.io.File
 class StudentCsvParserTest {
 
     @Test
-    fun testParseAllStudentsCsvFiltersOnlineStudents() {
+    fun testParseAllStudentsCsvIncludesOnlineStudentsWithOnlineStatus() {
         val file = File("../../all_students.csv")
         val content = if (file.exists()) file.readText() else """
             学号,姓名,班级名称,上课时间,上课形式,签到
@@ -22,12 +22,17 @@ class StudentCsvParserTest {
 
         val students = StudentCsvParser.parse(content)
 
-        // 验证只包含 β2 和 β3
-        assertTrue(students.all { it.classFormat in setOf("β2", "β3") })
-        // 验证不包含 α1 和 β1
-        assertTrue(students.none { it.classFormat in setOf("α1", "β1") })
+        // 验证线上学生（α1, β1）与线下学生（β2, β3）均被解析
+        val onlineStudents = students.filter { it.classFormat !in StudentCsvParser.OFFLINE_FORMATS }
+        val offlineStudents = students.filter { it.classFormat in StudentCsvParser.OFFLINE_FORMATS }
 
-        // 初始状态均为 UNCHECKED
-        assertTrue(students.all { it.status == AttendanceStatus.UNCHECKED })
+        assertEquals(2, onlineStudents.size)
+        assertEquals(2, offlineStudents.size)
+
+        // 线上学生初始状态为 ONLINE (免签)
+        assertTrue(onlineStudents.all { it.status == AttendanceStatus.ONLINE })
+
+        // 线下学生初始状态为 UNCHECKED (待签到)
+        assertTrue(offlineStudents.all { it.status == AttendanceStatus.UNCHECKED })
     }
 }

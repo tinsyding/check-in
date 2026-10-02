@@ -33,16 +33,23 @@ import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Videocam
+import com.jf.checkin.data.parser.StudentCsvParser
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
@@ -133,6 +140,7 @@ fun RollCallScreen(
 
     val currentClassInfo = classList.find { it.classCode == selectedClassCode }
     val presentCount = currentStudents.count { it.status == AttendanceStatus.PRESENT }
+    val onlineCount = currentStudents.count { it.status == AttendanceStatus.ONLINE }
     val totalCount = currentStudents.size
 
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFFF8FAFC))) {
@@ -220,6 +228,7 @@ fun RollCallScreen(
                         selectedClassCode = selectedClassCode,
                         currentStudents = currentStudents,
                         presentCount = presentCount,
+                        onlineCount = onlineCount,
                         totalCount = totalCount,
                         isAllPresent = isAllPresent,
                         isExporting = isExporting,
@@ -256,6 +265,7 @@ fun RollCallScreen(
                         selectedClassCode = selectedClassCode,
                         currentStudents = currentStudents,
                         presentCount = presentCount,
+                        onlineCount = onlineCount,
                         totalCount = totalCount,
                         isAllPresent = isAllPresent,
                         isExporting = isExporting,
@@ -1080,6 +1090,7 @@ private fun TabletLandscapeLayout(
     selectedClassCode: String?,
     currentStudents: List<com.jf.checkin.data.model.Student>,
     presentCount: Int,
+    onlineCount: Int = 0,
     totalCount: Int,
     isAllPresent: Boolean,
     isExporting: Boolean,
@@ -1099,6 +1110,7 @@ private fun TabletLandscapeLayout(
     movedOutStudents: List<com.jf.checkin.data.model.Student>,
     onReturnStudent: (com.jf.checkin.data.model.Student) -> Unit
 ) {
+    val context = LocalContext.current
     Row(modifier = Modifier.fillMaxSize()) {
         // 左侧班级导航栏 (280dp)
         Surface(
@@ -1151,7 +1163,10 @@ private fun TabletLandscapeLayout(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     LinearProgressIndicator(
-                                        progress = { if (info.totalCount > 0) info.presentCount.toFloat() / info.totalCount else 0f },
+                                        progress = {
+                                            val offlineTotal = info.offlineCount
+                                            if (offlineTotal > 0) info.presentCount.toFloat() / offlineTotal else if (info.totalCount > 0) 1f else 0f
+                                        },
                                         color = AccentGreen,
                                         trackColor = Color(0xFFE2E8F0),
                                         modifier = Modifier
@@ -1160,7 +1175,7 @@ private fun TabletLandscapeLayout(
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "${info.presentCount}/${info.totalCount}",
+                                        text = if (info.onlineCount > 0) "${info.presentCount}/${info.offlineCount}" else "${info.presentCount}/${info.totalCount}",
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = Color(0xFF475569)
@@ -1187,21 +1202,26 @@ private fun TabletLandscapeLayout(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    val offlineTotal = (totalCount - onlineCount).coerceAtLeast(0)
+                    val countText = if (onlineCount > 0) {
+                        "实到: $presentCount / 线下应到 $offlineTotal (线上: $onlineCount)"
+                    } else {
+                        "实到: $presentCount / $totalCount"
+                    }
                     Text(
-                        text = "实到: $presentCount / $totalCount",
+                        text = countText,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF1E293B)
                     )
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onReset) {
-                        Text("重置")
-                    }
-                    OutlinedButton(onClick = onResetAll) {
-                        Text("全部清空")
-                    }
+                var showMoreMenu by remember { mutableStateOf(false) }
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     // 手动加人（跨班调入）
                     OutlinedButton(onClick = onShowAddStudentDialog) {
                         Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -1227,16 +1247,7 @@ private fun TabletLandscapeLayout(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("席卡PDF")
                     }
-                    // 下载长图按钮
-                    OutlinedButton(
-                        onClick = onDownloadImage,
-                        enabled = !isExporting
-                    ) {
-                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("下载长图")
-                    }
-                    // 分享发送按钮
+                    // 分享发送按钮（核心主要操作，高亮突出，永不遮挡）
                     Button(
                         onClick = onExportAndShare,
                         colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
@@ -1247,7 +1258,43 @@ private fun TabletLandscapeLayout(
                         } else {
                             Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("发长图")
+                            Text("发长图", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    // 更多操作下拉菜单
+                    Box {
+                        IconButton(onClick = { showMoreMenu = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "更多操作", tint = Color(0xFF475569))
+                        }
+                        DropdownMenu(
+                            expanded = showMoreMenu,
+                            onDismissRequest = { showMoreMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("下载长图 (存相册)") },
+                                leadingIcon = { Icon(Icons.Default.Download, contentDescription = null, tint = PrimaryBlue) },
+                                onClick = {
+                                    showMoreMenu = false
+                                    onDownloadImage()
+                                },
+                                enabled = !isExporting
+                            )
+                            DropdownMenuItem(
+                                text = { Text("重置本班签到") },
+                                leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null, tint = Color(0xFFF59E0B)) },
+                                onClick = {
+                                    showMoreMenu = false
+                                    onReset()
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("全部清空 (所有班)", color = Color(0xFFEF4444)) },
+                                leadingIcon = { Icon(Icons.Default.DeleteSweep, contentDescription = null, tint = Color(0xFFEF4444)) },
+                                onClick = {
+                                    showMoreMenu = false
+                                    onResetAll()
+                                }
+                            )
                         }
                     }
                 }
@@ -1261,6 +1308,16 @@ private fun TabletLandscapeLayout(
                 onReturnStudent = onReturnStudent
             )
 
+            // 线上与转线上学生提示（免签）
+            OnlineStudentsNotice(
+                students = currentStudents.filter { it.status == AttendanceStatus.ONLINE }
+            )
+
+            // 线下学生优先排前，线上学生排在末尾
+            val sortedStudents = remember(currentStudents) {
+                currentStudents.sortedWith(compareBy { it.status == AttendanceStatus.ONLINE })
+            }
+
             // 学生大字点名网格 (横屏自适应 4~5 列)
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 140.dp),
@@ -1269,14 +1326,21 @@ private fun TabletLandscapeLayout(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                items(currentStudents, key = { it.studentId }) { student ->
+                items(sortedStudents, key = { it.studentId }) { student ->
                     StudentCard(
                         student = student,
                         onToggleCheckIn = { onToggleCheckIn(student.studentId) },
                         onSetStatus = { status -> onSetStatus(student.studentId, status) },
                         onEditRemark = { onEditRemark(student) },
                         onDeleteManual = if (student.isManual) ({ onDeleteManual(student) }) else null,
-                        onMoveClass = { onMoveClass(student) }
+                        onMoveClass = { onMoveClass(student) },
+                        onOnlineClick = {
+                            Toast.makeText(
+                                context,
+                                "${student.name} 为线上学生，无需签到。如需更改状态请长按卡片",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
                     )
                 }
             }
@@ -1293,6 +1357,7 @@ private fun PhonePortraitLayout(
     selectedClassCode: String?,
     currentStudents: List<com.jf.checkin.data.model.Student>,
     presentCount: Int,
+    onlineCount: Int = 0,
     totalCount: Int,
     isAllPresent: Boolean,
     isExporting: Boolean,
@@ -1312,6 +1377,7 @@ private fun PhonePortraitLayout(
     movedOutStudents: List<com.jf.checkin.data.model.Student>,
     onReturnStudent: (com.jf.checkin.data.model.Student) -> Unit
 ) {
+    val context = LocalContext.current
     Column(modifier = Modifier.fillMaxSize()) {
         // 班级滑动选择 Tab
         val selectedIndex = classList.indexOfFirst { it.classCode == selectedClassCode }.coerceAtLeast(0)
@@ -1331,7 +1397,7 @@ private fun PhonePortraitLayout(
                                 fontWeight = if (index == selectedIndex) FontWeight.Bold else FontWeight.Normal
                             )
                             Text(
-                                text = "${info.presentCount}/${info.totalCount}",
+                                text = if (info.onlineCount > 0) "${info.presentCount}/${info.offlineCount}" else "${info.presentCount}/${info.totalCount}",
                                 fontSize = 11.sp,
                                 color = if (index == selectedIndex) PrimaryBlue else Color(0xFF94A3B8)
                             )
@@ -1342,6 +1408,8 @@ private fun PhonePortraitLayout(
         }
 
         // 快速统计与一键操作栏
+        var showMoreMenu by remember { mutableStateOf(false) }
+
         Surface(
             modifier = Modifier.fillMaxWidth(),
             color = Color.White,
@@ -1350,81 +1418,117 @@ private fun PhonePortraitLayout(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 10.dp),
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                val offlineTotal = (totalCount - onlineCount).coerceAtLeast(0)
+                val countText = if (onlineCount > 0) {
+                    "$presentCount/$offlineTotal (线上$onlineCount)"
+                } else {
+                    "$presentCount/$totalCount"
+                }
                 Text(
-                    text = "$presentCount/$totalCount",
+                    text = countText,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1E293B)
+                    color = Color(0xFF1E293B),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Spacer(modifier = Modifier.weight(1f))
+
                 // 手动加人
                 OutlinedButton(
                     onClick = onShowAddStudentDialog,
                     modifier = Modifier.height(36.dp),
-                    contentPadding = PaddingValues(horizontal = 7.dp)
+                    contentPadding = PaddingValues(horizontal = 8.dp)
                 ) {
                     Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(15.dp))
-                    Spacer(modifier = Modifier.width(2.dp))
+                    Spacer(modifier = Modifier.width(3.dp))
                     Text("加人", fontSize = 12.sp)
                 }
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+
                 // 一键全到 / 取消全到 动态切换
                 FilledTonalButton(
                     onClick = onToggleAllPresent,
                     modifier = Modifier.height(36.dp),
-                    contentPadding = PaddingValues(horizontal = 7.dp)
+                    contentPadding = PaddingValues(horizontal = 8.dp)
                 ) {
+                    Icon(
+                        imageVector = if (isAllPresent) Icons.Default.Close else Icons.Default.DoneAll,
+                        contentDescription = null,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(modifier = Modifier.width(3.dp))
                     Text(if (isAllPresent) "取消" else "全到", fontSize = 12.sp)
                 }
-                Spacer(modifier = Modifier.width(4.dp))
-                // 全部清空（所有班级签到状态回到未到）
-                OutlinedButton(
-                    onClick = onResetAll,
-                    modifier = Modifier.height(36.dp),
-                    contentPadding = PaddingValues(horizontal = 7.dp)
-                ) {
-                    Text("清空", fontSize = 12.sp)
-                }
-                Spacer(modifier = Modifier.width(4.dp))
-                // 席卡 PDF 按钮
-                OutlinedButton(
-                    onClick = onShowNameplateDialog,
-                    modifier = Modifier.height(36.dp),
-                    contentPadding = PaddingValues(horizontal = 7.dp),
-                    enabled = !isExporting
-                ) {
-                    Icon(Icons.Default.Badge, contentDescription = null, modifier = Modifier.size(15.dp))
-                    Spacer(modifier = Modifier.width(2.dp))
-                    Text("席卡", fontSize = 12.sp)
-                }
-                Spacer(modifier = Modifier.width(4.dp))
-                OutlinedButton(
-                    onClick = onDownloadImage,
-                    modifier = Modifier.height(36.dp),
-                    contentPadding = PaddingValues(horizontal = 7.dp),
-                    enabled = !isExporting
-                ) {
-                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(15.dp))
-                    Spacer(modifier = Modifier.width(2.dp))
-                    Text("存相册", fontSize = 12.sp)
-                }
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+
+                // 分享发送按钮（主要核心操作，高亮蓝色，绝不遮挡）
                 Button(
                     onClick = onExportAndShare,
                     colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
                     modifier = Modifier.height(36.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp),
                     enabled = !isExporting
                 ) {
                     if (isExporting) {
                         CircularProgressIndicator(color = Color.White, modifier = Modifier.size(15.dp), strokeWidth = 2.dp)
                     } else {
                         Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(15.dp))
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text("发长图", fontSize = 12.sp)
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("发长图", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Spacer(modifier = Modifier.width(2.dp))
+
+                // 更多操作下拉菜单
+                Box {
+                    IconButton(
+                        onClick = { showMoreMenu = true },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "更多操作", tint = Color(0xFF475569))
+                    }
+                    DropdownMenu(
+                        expanded = showMoreMenu,
+                        onDismissRequest = { showMoreMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("存长图到相册") },
+                            leadingIcon = { Icon(Icons.Default.Download, contentDescription = null, tint = PrimaryBlue) },
+                            onClick = {
+                                showMoreMenu = false
+                                onDownloadImage()
+                            },
+                            enabled = !isExporting
+                        )
+                        DropdownMenuItem(
+                            text = { Text("席卡打印 / PDF") },
+                            leadingIcon = { Icon(Icons.Default.Badge, contentDescription = null, tint = Color(0xFF0F766E)) },
+                            onClick = {
+                                showMoreMenu = false
+                                onShowNameplateDialog()
+                            },
+                            enabled = !isExporting
+                        )
+                        DropdownMenuItem(
+                            text = { Text("重置本班签到") },
+                            leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null, tint = Color(0xFFF59E0B)) },
+                            onClick = {
+                                showMoreMenu = false
+                                onReset()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("全部清空 (所有班)", color = Color(0xFFEF4444)) },
+                            leadingIcon = { Icon(Icons.Default.DeleteSweep, contentDescription = null, tint = Color(0xFFEF4444)) },
+                            onClick = {
+                                showMoreMenu = false
+                                onResetAll()
+                            }
+                        )
                     }
                 }
             }
@@ -1434,8 +1538,17 @@ private fun PhonePortraitLayout(
         MovedOutNotice(
             students = movedOutStudents,
             onReturnStudent = onReturnStudent,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
         )
+        OnlineStudentsNotice(
+            students = currentStudents.filter { it.status == AttendanceStatus.ONLINE },
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+        )
+
+        // 线下学生优先排前，线上学生排在末尾
+        val sortedStudents = remember(currentStudents) {
+            currentStudents.sortedWith(compareBy { it.status == AttendanceStatus.ONLINE })
+        }
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
             contentPadding = PaddingValues(12.dp),
@@ -1443,14 +1556,21 @@ private fun PhonePortraitLayout(
             verticalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier.weight(1f)
         ) {
-            items(currentStudents, key = { it.studentId }) { student ->
+            items(sortedStudents, key = { it.studentId }) { student ->
                 StudentCard(
                     student = student,
                     onToggleCheckIn = { onToggleCheckIn(student.studentId) },
                     onSetStatus = { status -> onSetStatus(student.studentId, status) },
                     onEditRemark = { onEditRemark(student) },
                     onDeleteManual = if (student.isManual) ({ onDeleteManual(student) }) else null,
-                    onMoveClass = { onMoveClass(student) }
+                    onMoveClass = { onMoveClass(student) },
+                    onOnlineClick = {
+                        Toast.makeText(
+                            context,
+                            "${student.name} 为线上学生，无需签到。如需更改状态请长按卡片",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
                 )
             }
         }
@@ -1504,6 +1624,53 @@ private fun MovedOutNotice(
                     }
                 }
             }
+        }
+    }
+    Spacer(modifier = Modifier.height(8.dp))
+}
+
+/**
+ * 线上学生提示条：线上听课与转线上人员（免签），展示姓名与状态标签，为空时不占位。
+ */
+@Composable
+private fun OnlineStudentsNotice(
+    students: List<com.jf.checkin.data.model.Student>,
+    modifier: Modifier = Modifier
+) {
+    if (students.isEmpty()) return
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = Color(0xFFF3E8FF),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFD8B4FE)),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Videocam,
+                    contentDescription = null,
+                    tint = Color(0xFF7E22CE),
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "线上/转线上学生（免签，共 ${students.size} 人）",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF6B21A8)
+                )
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            val itemsText = students.joinToString("、") { student ->
+                val tag = if (student.classFormat in StudentCsvParser.OFFLINE_FORMATS) "转线上" else "线上"
+                "${student.name} [${tag}]"
+            }
+            Text(
+                text = itemsText,
+                fontSize = 12.sp,
+                color = Color(0xFF581C87),
+                lineHeight = 18.sp
+            )
         }
     }
     Spacer(modifier = Modifier.height(8.dp))

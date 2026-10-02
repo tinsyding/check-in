@@ -223,12 +223,17 @@ class StudentRepository(private val prefRepo: UserPrefRepository) {
     fun toggleStudentCheckIn(studentId: String) {
         _students.value = _students.value.map {
             if (it.studentId == studentId) {
-                val nextStatus = if (it.status == AttendanceStatus.PRESENT) {
-                    AttendanceStatus.UNCHECKED
+                // 线上听课人员无需签到，点击不切换签到状态
+                if (it.status == AttendanceStatus.ONLINE) {
+                    it
                 } else {
-                    AttendanceStatus.PRESENT
+                    val nextStatus = if (it.status == AttendanceStatus.PRESENT) {
+                        AttendanceStatus.UNCHECKED
+                    } else {
+                        AttendanceStatus.PRESENT
+                    }
+                    it.copy(status = nextStatus)
                 }
-                it.copy(status = nextStatus)
             } else {
                 it
             }
@@ -250,7 +255,12 @@ class StudentRepository(private val prefRepo: UserPrefRepository) {
     fun markAllPresent(classCode: String) {
         _students.value = _students.value.map {
             if (it.classCode == classCode) {
-                it.copy(status = AttendanceStatus.PRESENT)
+                // 线上学生无需签到，全到时保持 ONLINE 不变
+                if (it.status == AttendanceStatus.ONLINE) {
+                    it
+                } else {
+                    it.copy(status = AttendanceStatus.PRESENT)
+                }
             } else {
                 it
             }
@@ -261,7 +271,9 @@ class StudentRepository(private val prefRepo: UserPrefRepository) {
     fun resetClass(classCode: String) {
         _students.value = _students.value.map {
             if (it.classCode == classCode) {
-                it.copy(status = AttendanceStatus.UNCHECKED)
+                // 原生线上学生（α1/β1）重置仍为 ONLINE，线下学生重置为 UNCHECKED
+                val isOriginallyOnline = it.classFormat !in com.jf.checkin.data.parser.StudentCsvParser.OFFLINE_FORMATS
+                it.copy(status = if (isOriginallyOnline) AttendanceStatus.ONLINE else AttendanceStatus.UNCHECKED)
             } else {
                 it
             }
@@ -284,10 +296,12 @@ class StudentRepository(private val prefRepo: UserPrefRepository) {
         persistStatuses()
     }
 
-    /** 清空全校所有班级的签到状态（回到未到） */
+    /** 清空全校所有班级的签到状态（回到默认状态：原生线上为线上，线下为未到） */
     fun resetAllStatuses() {
         _students.value = _students.value.map {
-            if (it.status == AttendanceStatus.UNCHECKED) it else it.copy(status = AttendanceStatus.UNCHECKED)
+            val isOriginallyOnline = it.classFormat !in com.jf.checkin.data.parser.StudentCsvParser.OFFLINE_FORMATS
+            val target = if (isOriginallyOnline) AttendanceStatus.ONLINE else AttendanceStatus.UNCHECKED
+            if (it.status == target) it else it.copy(status = target)
         }
         persistStatuses()
     }

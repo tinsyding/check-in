@@ -5,8 +5,8 @@ import com.jf.checkin.data.model.Student
 
 object StudentCsvParser {
 
-    // 只有 β2 和 β3 是线下需要签到的；α1 和 β1 是线上，直接忽略
-    private val OFFLINE_FORMATS = setOf("β2", "β3")
+    // β2 和 β3 是线下需要签到的；其他（如 α1, β1）是线上，无需签到
+    val OFFLINE_FORMATS = setOf("β2", "β3")
 
     fun parse(csvContent: String): List<Student> {
         val students = mutableListOf<Student>()
@@ -30,13 +30,18 @@ object StudentCsvParser {
                 val classFormat = parts[4].trim()
                 val checkInMark = if (parts.size >= 6) parts[5].trim() else ""
 
-                // 核心过滤规则：仅提取线下 β2 和 β3
-                if (OFFLINE_FORMATS.contains(classFormat)) {
-                    val initialStatus = when (checkInMark) {
-                        "√", "对号", "已到", "出勤" -> AttendanceStatus.PRESENT
-                        "迟到" -> AttendanceStatus.LATE
-                        "请假" -> AttendanceStatus.LEAVE
-                        else -> AttendanceStatus.UNCHECKED
+                if (studentId.isNotBlank() && name.isNotBlank() && classCode.isNotBlank()) {
+                    val initialStatus = if (OFFLINE_FORMATS.contains(classFormat)) {
+                        when (checkInMark) {
+                            "√", "对号", "已到", "出勤" -> AttendanceStatus.PRESENT
+                            "迟到" -> AttendanceStatus.LATE
+                            "请假" -> AttendanceStatus.LEAVE
+                            "转线上", "线上" -> AttendanceStatus.ONLINE
+                            else -> AttendanceStatus.UNCHECKED
+                        }
+                    } else {
+                        // 线上学生（如 α1, β1）：初始状态即为 ONLINE，无需签到
+                        AttendanceStatus.ONLINE
                     }
 
                     students.add(

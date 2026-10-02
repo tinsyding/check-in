@@ -11,6 +11,8 @@ data class AttendanceRecord(
     val lateCount: Int,
     val leaveCount: Int,
     val absentCount: Int,
+    val onlineCount: Int = 0,
+    val movedOutCount: Int = 0,
     val imagePath: String,
     /** 生成记录时全班每个学生的签到状态快照（studentId -> status.name），用于恢复回主界面 */
     val statusSnapshot: Map<String, String> = emptyMap()

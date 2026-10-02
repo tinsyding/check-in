@@ -13,6 +13,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import com.jf.checkin.data.model.AttendanceStatus
 import com.jf.checkin.data.model.Student
+import com.jf.checkin.data.parser.StudentCsvParser
 import java.io.File
 import java.io.FileOutputStream
 import java.time.LocalDateTime
@@ -128,12 +129,16 @@ object TableImageGenerator {
             linePaint.color = Color.parseColor("#F3F4F6")
             canvas.drawLine(tableLeft, rowY + rowHeight, tableRight, rowY + rowHeight, linePaint)
 
+            val isMovedOut = student.originalClassCode.isNotBlank() &&
+                    student.originalClassCode == classCode &&
+                    student.classCode != classCode
+
             var curX = tableLeft
             val rowValues = arrayOf(
                 student.studentId,
                 student.name,
-                student.classCode,
-                student.classTime,
+                classCode,
+                classTime,
                 student.classFormat
             )
 
@@ -153,45 +158,62 @@ object TableImageGenerator {
             val status = student.status
             val statusText: String
             val statusColor: Int
-            when (status) {
-                AttendanceStatus.PRESENT -> {
-                    statusText = "√"
-                    statusColor = Color.parseColor("#10B981") // 绿色对号
-                }
-                AttendanceStatus.LATE -> {
-                    statusText = "迟到"
-                    statusColor = Color.parseColor("#F59E0B") // 琥珀橙
-                }
-                AttendanceStatus.LEAVE -> {
-                    statusText = "请假"
-                    statusColor = Color.parseColor("#3B82F6") // 科技蓝
-                }
-                AttendanceStatus.UNCHECKED -> {
-                    statusText = "未到"
-                    statusColor = Color.parseColor("#EF4444") // 浅红
+            if (isMovedOut) {
+                statusText = "调出"
+                statusColor = Color.parseColor("#0F766E") // 深青色标识调出
+            } else {
+                when (status) {
+                    AttendanceStatus.PRESENT -> {
+                        statusText = "√"
+                        statusColor = Color.parseColor("#10B981") // 绿色对号
+                    }
+                    AttendanceStatus.LATE -> {
+                        statusText = "迟到"
+                        statusColor = Color.parseColor("#F59E0B") // 琥珀橙
+                    }
+                    AttendanceStatus.LEAVE -> {
+                        statusText = "请假"
+                        statusColor = Color.parseColor("#3B82F6") // 科技蓝
+                    }
+                    AttendanceStatus.ONLINE -> {
+                        statusText = if (student.classFormat in StudentCsvParser.OFFLINE_FORMATS) "转线上" else "线上"
+                        statusColor = Color.parseColor("#8B5CF6") // 优雅紫
+                    }
+                    AttendanceStatus.UNCHECKED -> {
+                        statusText = "未到"
+                        statusColor = Color.parseColor("#EF4444") // 浅红
+                    }
                 }
             }
 
             textPaint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            textPaint.textSize = if (status == AttendanceStatus.PRESENT) 30f else 23f
+            textPaint.textSize = if (!isMovedOut && status == AttendanceStatus.PRESENT) 30f else 23f
             textPaint.color = statusColor
             val stWidth = textPaint.measureText(statusText)
             val stX = curX + (colWidths[5] - stWidth) / 2f
             canvas.drawText(statusText, stX, rowY + 39f, textPaint)
             curX += colWidths[5]
 
-            // 备注列（调入来源等，过长截断；无备注的临时调入显示原班）
+            // 备注列（调出去向、调入来源等，过长截断；无备注的临时调入显示原班）
             textPaint.typeface = Typeface.DEFAULT
             textPaint.textSize = 20f
-            textPaint.color = Color.parseColor("#4F46E5")
             var remark = student.remark
-            if (remark.isBlank() && student.originalClassCode.isNotBlank() &&
-                student.originalClassCode != student.classCode
-            ) {
-                remark = "原${student.originalClassCode}调入"
+            if (isMovedOut) {
+                // 调到其他班的，备注为“转到某某班”
+                val targetCode = student.classCode
+                val targetLabel = if (targetCode.endsWith("班")) "转到$targetCode" else "转到${targetCode}班"
+                remark = if (remark.isNotBlank()) "$targetLabel ($remark)" else targetLabel
+                textPaint.color = Color.parseColor("#0F766E")
+            } else {
+                if (remark.isBlank() && student.originalClassCode.isNotBlank() &&
+                    student.originalClassCode != student.classCode
+                ) {
+                    remark = "原${student.originalClassCode}调入"
+                }
+                textPaint.color = Color.parseColor("#4F46E5")
             }
-            if (textPaint.measureText(remark) > colWidths[6] - 16f && remark.length > 12) {
-                remark = remark.take(12) + "…"
+            if (textPaint.measureText(remark) > colWidths[6] - 16f && remark.length > 14) {
+                remark = remark.take(14) + "…"
             }
             val remarkWidth = textPaint.measureText(remark)
             val remarkX = curX + (colWidths[6] - remarkWidth) / 2f

@@ -49,6 +49,7 @@ import com.jf.checkin.data.repository.HistoryRepository
 import com.jf.checkin.ui.theme.AccentBlue
 import com.jf.checkin.ui.theme.AccentGreen
 import com.jf.checkin.ui.theme.AccentOrange
+import com.jf.checkin.ui.theme.AccentPurple
 import com.jf.checkin.ui.theme.AccentRed
 import com.jf.checkin.ui.theme.PrimaryBlue
 import com.jf.checkin.util.ShareUtil
@@ -156,6 +157,9 @@ fun HistoryScreen(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 StatusBadge(label = "实到: ${record.presentCount}", color = AccentGreen)
+                                if (record.onlineCount > 0) {
+                                    StatusBadge(label = "转线上: ${record.onlineCount}", color = AccentPurple)
+                                }
                                 if (record.lateCount > 0) {
                                     StatusBadge(label = "迟到: ${record.lateCount}", color = AccentOrange)
                                 }
@@ -164,6 +168,9 @@ fun HistoryScreen(
                                 }
                                 if (record.absentCount > 0) {
                                     StatusBadge(label = "未到: ${record.absentCount}", color = AccentRed)
+                                }
+                                if (record.movedOutCount > 0) {
+                                    StatusBadge(label = "调出: ${record.movedOutCount}", color = Color(0xFF0F766E))
                                 }
                             }
 

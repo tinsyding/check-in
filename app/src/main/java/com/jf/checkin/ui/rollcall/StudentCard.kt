@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EventBusy
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -44,8 +45,12 @@ import com.jf.checkin.data.model.Student
 import com.jf.checkin.ui.theme.AccentBlue
 import com.jf.checkin.ui.theme.AccentGreen
 import com.jf.checkin.ui.theme.AccentOrange
+import com.jf.checkin.ui.theme.AccentPurple
+import com.jf.checkin.ui.theme.CardBackgroundOnline
+import com.jf.checkin.data.parser.StudentCsvParser
 import com.jf.checkin.ui.theme.CardBackgroundPresent
 import com.jf.checkin.ui.theme.CardBackgroundUnchecked
+import com.jf.checkin.ui.theme.CardBorderOnline
 import com.jf.checkin.ui.theme.CardBorderPresent
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -57,6 +62,7 @@ fun StudentCard(
     onEditRemark: () -> Unit = {},
     onDeleteManual: (() -> Unit)? = null,
     onMoveClass: () -> Unit = {},
+    onOnlineClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -65,6 +71,7 @@ fun StudentCard(
         AttendanceStatus.PRESENT -> Triple(CardBackgroundPresent, CardBorderPresent, AccentGreen)
         AttendanceStatus.LATE -> Triple(Color(0xFFFEF3C7), Color(0xFFFCD34D), AccentOrange)
         AttendanceStatus.LEAVE -> Triple(Color(0xFFE0E7FF), Color(0xFFA5B4FC), AccentBlue)
+        AttendanceStatus.ONLINE -> Triple(CardBackgroundOnline, CardBorderOnline, AccentPurple)
         AttendanceStatus.UNCHECKED -> Triple(CardBackgroundUnchecked, Color(0xFFE2E8F0), Color(0xFF94A3B8))
     }
 
@@ -73,11 +80,19 @@ fun StudentCard(
             shape = RoundedCornerShape(14.dp),
             colors = CardDefaults.cardColors(containerColor = cardBgColor),
             border = BorderStroke(1.5.dp, borderColor),
-            elevation = CardDefaults.cardElevation(defaultElevation = if (student.status == AttendanceStatus.PRESENT) 2.dp else 0.dp),
+            elevation = CardDefaults.cardElevation(
+                defaultElevation = if (student.status == AttendanceStatus.PRESENT || student.status == AttendanceStatus.ONLINE) 2.dp else 0.dp
+            ),
             modifier = Modifier
                 .fillMaxWidth()
                 .combinedClickable(
-                    onClick = { onToggleCheckIn() },
+                    onClick = {
+                        if (student.status == AttendanceStatus.ONLINE) {
+                            onOnlineClick?.invoke()
+                        } else {
+                            onToggleCheckIn()
+                        }
+                    },
                     onLongClick = { showMenu = true }
                 )
         ) {
@@ -148,6 +163,7 @@ fun StudentCard(
                         AttendanceStatus.PRESENT -> AccentGreen
                         AttendanceStatus.LATE -> AccentOrange
                         AttendanceStatus.LEAVE -> AccentBlue
+                        AttendanceStatus.ONLINE -> AccentPurple
                         AttendanceStatus.UNCHECKED -> Color(0xFFCBD5E1)
                     },
                     modifier = Modifier.height(26.dp)
@@ -164,12 +180,21 @@ fun StudentCard(
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
+                        } else if (student.status == AttendanceStatus.ONLINE) {
+                            Icon(
+                                imageVector = Icons.Default.Videocam,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
                         }
                         Text(
                             text = when (student.status) {
                                 AttendanceStatus.PRESENT -> "已到"
                                 AttendanceStatus.LATE -> "迟到"
                                 AttendanceStatus.LEAVE -> "请假"
+                                AttendanceStatus.ONLINE -> if (student.classFormat in StudentCsvParser.OFFLINE_FORMATS) "转线上 · 免签" else "线上 · 免签"
                                 AttendanceStatus.UNCHECKED -> "未到"
                             },
                             fontSize = 13.sp,
@@ -207,6 +232,14 @@ fun StudentCard(
                 leadingIcon = { Icon(Icons.Default.EventBusy, contentDescription = null, tint = AccentBlue) },
                 onClick = {
                     onSetStatus(AttendanceStatus.LEAVE)
+                    showMenu = false
+                }
+            )
+            DropdownMenuItem(
+                text = { Text(if (student.classFormat in StudentCsvParser.OFFLINE_FORMATS) "转线上" else "线上", color = AccentPurple, fontWeight = FontWeight.SemiBold) },
+                leadingIcon = { Icon(Icons.Default.Videocam, contentDescription = null, tint = AccentPurple) },
+                onClick = {
+                    onSetStatus(AttendanceStatus.ONLINE)
                     showMenu = false
                 }
             )

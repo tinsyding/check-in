@@ -47,6 +47,8 @@ class HistoryRepository(private val context: Context) {
                         lateCount = obj.optInt("lateCount"),
                         leaveCount = obj.optInt("leaveCount"),
                         absentCount = obj.optInt("absentCount"),
+                        onlineCount = obj.optInt("onlineCount", 0),
+                        movedOutCount = obj.optInt("movedOutCount", 0),
                         imagePath = obj.optString("imagePath"),
                         statusSnapshot = snapshot
                     )
@@ -73,6 +75,8 @@ class HistoryRepository(private val context: Context) {
                     put("lateCount", r.lateCount)
                     put("leaveCount", r.leaveCount)
                     put("absentCount", r.absentCount)
+                    put("onlineCount", r.onlineCount)
+                    put("movedOutCount", r.movedOutCount)
                     put("imagePath", r.imagePath)
                     put("statusSnapshot", JSONObject().apply {
                         for ((k, v) in r.statusSnapshot) {

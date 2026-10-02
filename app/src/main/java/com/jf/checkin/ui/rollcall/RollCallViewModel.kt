@@ -32,8 +32,11 @@ data class ClassInfo(
     val classCode: String,
     val classTime: String,
     val totalCount: Int,
-    val presentCount: Int
-)
+    val presentCount: Int,
+    val onlineCount: Int = 0
+) {
+    val offlineCount: Int get() = (totalCount - onlineCount).coerceAtLeast(0)
+}
 
 class RollCallViewModel(
     private val studentRepository: StudentRepository,
@@ -127,7 +130,8 @@ class RollCallViewModel(
                 classCode = code,
                 classTime = list.firstOrNull()?.classTime ?: "",
                 totalCount = list.size,
-                presentCount = list.count { it.status == AttendanceStatus.PRESENT }
+                presentCount = list.count { it.status == AttendanceStatus.PRESENT },
+                onlineCount = list.count { it.status == AttendanceStatus.ONLINE }
             )
         }.sortedBy { it.classTime }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -141,9 +145,10 @@ class RollCallViewModel(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // 当前班级是否已经全到
+    // 当前班级线下需签到学生是否已经全到
     val isAllPresent: StateFlow<Boolean> = currentStudents.map { list ->
-        list.isNotEmpty() && list.all { it.status == AttendanceStatus.PRESENT }
+        val offlineStudents = list.filter { it.status != AttendanceStatus.ONLINE }
+        offlineStudents.isNotEmpty() && offlineStudents.all { it.status == AttendanceStatus.PRESENT }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     /** 全校所有处于临时调动中的学生（人在外班，原班有显示、现班有来源） */
@@ -271,22 +276,26 @@ class RollCallViewModel(
      */
     fun downloadAndSaveImage(context: Context) {
         val currentCode = _selectedClassCode.value ?: return
-        val students = currentStudents.value
-        if (students.isEmpty()) {
+        val inStudents = currentStudents.value
+        val movedOut = allStudents.value.filter {
+            it.originalClassCode == currentCode && it.classCode != currentCode
+        }
+        if (inStudents.isEmpty() && movedOut.isEmpty()) {
             Toast.makeText(context, "当前班级暂无学生数据", Toast.LENGTH_SHORT).show()
             return
         }
+        val exportStudents = inStudents + movedOut
 
         viewModelScope.launch {
             _isExporting.value = true
             try {
-                val classTime = students.firstOrNull()?.classTime ?: ""
+                val classTime = inStudents.firstOrNull()?.classTime ?: movedOut.firstOrNull()?.classTime ?: ""
                 val currentTeacher = getEffectiveTeacherName()
                 val success = withContext(Dispatchers.IO) {
                     // 同时生成 cache 文件用于历史记录
-                    val cacheFile = TableImageGenerator.generateTableImageFile(context, currentCode, classTime, currentTeacher, students)
-                    saveHistory(cacheFile, currentCode, classTime, students)
-                    TableImageGenerator.saveToGallery(context, currentCode, classTime, currentTeacher, students)
+                    val cacheFile = TableImageGenerator.generateTableImageFile(context, currentCode, classTime, currentTeacher, exportStudents)
+                    saveHistory(cacheFile, currentCode, classTime, inStudents, movedOut.size)
+                    TableImageGenerator.saveToGallery(context, currentCode, classTime, currentTeacher, exportStudents)
                 }
                 if (success) {
                     Toast.makeText(context, "签到长图已成功保存至相册（Pictures/班级签到表）！", Toast.LENGTH_LONG).show()
@@ -306,20 +315,24 @@ class RollCallViewModel(
      */
     fun exportAndShare(context: Context) {
         val currentCode = _selectedClassCode.value ?: return
-        val students = currentStudents.value
-        if (students.isEmpty()) {
+        val inStudents = currentStudents.value
+        val movedOut = allStudents.value.filter {
+            it.originalClassCode == currentCode && it.classCode != currentCode
+        }
+        if (inStudents.isEmpty() && movedOut.isEmpty()) {
             Toast.makeText(context, "当前班级暂无学生数据", Toast.LENGTH_SHORT).show()
             return
         }
+        val exportStudents = inStudents + movedOut
 
         viewModelScope.launch {
             _isExporting.value = true
             try {
-                val classTime = students.firstOrNull()?.classTime ?: ""
+                val classTime = inStudents.firstOrNull()?.classTime ?: movedOut.firstOrNull()?.classTime ?: ""
                 val currentTeacher = getEffectiveTeacherName()
                 val imageFile = withContext(Dispatchers.IO) {
-                    val file = TableImageGenerator.generateTableImageFile(context, currentCode, classTime, currentTeacher, students)
-                    saveHistory(file, currentCode, classTime, students)
+                    val file = TableImageGenerator.generateTableImageFile(context, currentCode, classTime, currentTeacher, exportStudents)
+                    saveHistory(file, currentCode, classTime, inStudents, movedOut.size)
                     file
                 }
                 ShareUtil.shareImage(context, imageFile, "$currentCode 线下签到表")
@@ -600,7 +613,13 @@ class RollCallViewModel(
         }
     }
 
-    private fun saveHistory(imageFile: File, classCode: String, classTime: String, students: List<Student>) {
+    private fun saveHistory(
+        imageFile: File,
+        classCode: String,
+        classTime: String,
+        students: List<Student>,
+        movedOutCount: Int = 0
+    ) {
         val nowStr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
         val record = AttendanceRecord(
             id = UUID.randomUUID().toString(),
@@ -613,6 +632,8 @@ class RollCallViewModel(
             lateCount = students.count { it.status == AttendanceStatus.LATE },
             leaveCount = students.count { it.status == AttendanceStatus.LEAVE },
             absentCount = students.count { it.status == AttendanceStatus.UNCHECKED },
+            onlineCount = students.count { it.status == AttendanceStatus.ONLINE },
+            movedOutCount = movedOutCount,
             imagePath = imageFile.absolutePath,
             statusSnapshot = students.associate { it.studentId to it.status.name }
         )
