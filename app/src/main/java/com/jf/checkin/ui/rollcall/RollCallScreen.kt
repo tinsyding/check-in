@@ -139,6 +139,7 @@ fun RollCallScreen(
     var deleteConfirmStudent by remember { mutableStateOf<com.jf.checkin.data.model.Student?>(null) }
     var moveStudent by remember { mutableStateOf<com.jf.checkin.data.model.Student?>(null) }
     var showResetAllDialog by remember { mutableStateOf(false) }
+    var showTmsAfterShareDialog by remember { mutableStateOf(false) }
 
     // Android 8/9 保存相册/下载目录仍需 WRITE_EXTERNAL_STORAGE，按需申请后继续原操作
     var pendingStorageAction by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -307,7 +308,15 @@ fun RollCallScreen(
                                 runWithStoragePermission { viewModel.downloadAndSaveImage(context) }
                             }
                         },
-                        onExportAndShare = { triggerExportWithTeacherCheck { viewModel.exportAndShare(context) } },
+                        onExportAndShare = {
+                            triggerExportWithTeacherCheck {
+                                viewModel.exportAndShare(context) {
+                                    if (viewModel.shouldPromptTmsSync()) {
+                                        showTmsAfterShareDialog = true
+                                    }
+                                }
+                            }
+                        },
                         onShowNameplateDialog = { showNameplateDialog = true },
                         onShowAddStudentDialog = { showAddStudentDialog = true },
                         onStartTmsSync = { viewModel.startTmsSync(LocalDate.now()) },
@@ -349,7 +358,15 @@ fun RollCallScreen(
                                 runWithStoragePermission { viewModel.downloadAndSaveImage(context) }
                             }
                         },
-                        onExportAndShare = { triggerExportWithTeacherCheck { viewModel.exportAndShare(context) } },
+                        onExportAndShare = {
+                            triggerExportWithTeacherCheck {
+                                viewModel.exportAndShare(context) {
+                                    if (viewModel.shouldPromptTmsSync()) {
+                                        showTmsAfterShareDialog = true
+                                    }
+                                }
+                            }
+                        },
                         onShowNameplateDialog = { showNameplateDialog = true },
                         onShowAddStudentDialog = { showAddStudentDialog = true },
                         onStartTmsSync = { viewModel.startTmsSync(LocalDate.now()) },
@@ -403,6 +420,59 @@ fun RollCallScreen(
             onNavigateToSettings()
         }
     )
+
+    // 分享签到长图后，询问是否继续把当前班考勤同步到校管家。
+    if (showTmsAfterShareDialog) {
+        val hasTmsCredentials = viewModel.hasTmsCredentials()
+        AlertDialog(
+            onDismissRequest = { showTmsAfterShareDialog = false },
+            icon = {
+                Icon(
+                    Icons.Default.CloudUpload,
+                    contentDescription = null,
+                    tint = PrimaryBlue,
+                    modifier = Modifier.size(28.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = if (hasTmsCredentials) "同步校管家考勤？" else "尚未配置校管家账号",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = if (hasTmsCredentials) {
+                        "签到表已生成。是否现在把当前班级的考勤同步到校管家？\n\n同步前会先显示预览，确认后才会提交。"
+                    } else {
+                        "签到表已生成，但还没有填写校管家账号密码。请先到设置中完成配置，之后就能在分享后直接同步。"
+                    },
+                    fontSize = 14.sp,
+                    lineHeight = 21.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showTmsAfterShareDialog = false
+                        if (hasTmsCredentials) {
+                            viewModel.startTmsSync(LocalDate.now())
+                        } else {
+                            onNavigateToSettings()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                ) {
+                    Text(if (hasTmsCredentials) "同步校管家" else "去设置")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showTmsAfterShareDialog = false }) {
+                    Text("暂不")
+                }
+            }
+        )
+    }
 
     // 席卡 PDF 导出与局域网直连打印弹窗
     if (showNameplateDialog) {

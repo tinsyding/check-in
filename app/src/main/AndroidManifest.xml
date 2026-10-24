@@ -3,6 +3,7 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Android 8/9 通过 MediaStore 保存相册/下载目录仍需此权限；Android 10+ 无需申请 -->
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"

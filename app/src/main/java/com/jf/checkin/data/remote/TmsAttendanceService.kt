@@ -994,6 +994,11 @@ internal object TmsAttendanceMapper {
         return raw.replace("\\s".toRegex(), "")
     }
 
+    /** 用于本机同步记录比较：忽略空白和大小写差异。 */
+    fun classNameKey(raw: String): String {
+        return normalizeClassName(raw).lowercase(Locale.ROOT)
+    }
+
     /** 判断课程是否真正点过名；兼容 .NET 的 DateTime.MinValue 和 JSON null。 */
     fun hasAttendanceTime(raw: String): Boolean {
         val value = raw.trim()

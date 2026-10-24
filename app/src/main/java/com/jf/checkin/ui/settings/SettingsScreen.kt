@@ -1,6 +1,9 @@
 package com.jf.checkin.ui.settings
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -27,6 +30,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Save
@@ -48,7 +52,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -66,9 +72,11 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.jf.checkin.data.parser.StudentCsvParser
 import com.jf.checkin.data.repository.StudentRepository
 import com.jf.checkin.data.repository.UserPrefRepository
+import com.jf.checkin.logic.TmsReminderScheduler
 import com.jf.checkin.ui.theme.PrimaryBlue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -94,6 +102,44 @@ fun SettingsScreen(
     var tmsUsername by remember { mutableStateOf(prefRepository.tmsUsername) }
     var tmsPassword by remember { mutableStateOf(prefRepository.tmsPassword) }
     var showTmsPassword by remember { mutableStateOf(false) }
+    var tmsReminderEnabled by remember { mutableStateOf(prefRepository.tmsDailyReminderEnabled) }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            tmsReminderEnabled = true
+            prefRepository.tmsDailyReminderEnabled = true
+            TmsReminderScheduler.schedule(context)
+            Toast.makeText(context, "已开启每天 18:00 的未同步提醒", Toast.LENGTH_SHORT).show()
+        } else {
+            tmsReminderEnabled = false
+            prefRepository.tmsDailyReminderEnabled = false
+            TmsReminderScheduler.cancel(context)
+            Toast.makeText(context, "未授予通知权限，无法显示每日提醒", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun setTmsReminderEnabled(enabled: Boolean) {
+        if (!enabled) {
+            tmsReminderEnabled = false
+            prefRepository.tmsDailyReminderEnabled = false
+            TmsReminderScheduler.cancel(context)
+            return
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            return
+        }
+        tmsReminderEnabled = true
+        prefRepository.tmsDailyReminderEnabled = true
+        TmsReminderScheduler.schedule(context)
+    }
 
     var printerProfiles by remember { mutableStateOf(prefRepository.getPrinterProfiles()) }
     var selectedPrinterId by remember {
@@ -339,6 +385,56 @@ fun SettingsScreen(
                         Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("保存校管家账密")
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Notifications,
+                            contentDescription = null,
+                            tint = PrimaryBlue,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "每天 18:00 提醒未同步班级",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF1E293B)
+                            )
+                            Text(
+                                text = "本地通知，不需要注册远程推送。若今天有班级还没有同步成功，会在通知栏提醒。",
+                                fontSize = 11.sp,
+                                lineHeight = 16.sp,
+                                color = Color(0xFF64748B)
+                            )
+                        }
+                        Switch(
+                            checked = tmsReminderEnabled,
+                            onCheckedChange = { setTmsReminderEnabled(it) }
+                        )
+                    }
+
+                    if (tmsReminderEnabled &&
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.POST_NOTIFICATIONS
+                        ) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        TextButton(
+                            onClick = {
+                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            },
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Text("系统通知权限未开启，点此授权", fontSize = 12.sp)
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -629,7 +725,8 @@ fun SettingsScreen(
                                 "• 临时调班：长按卡片「调到其他班」只是临时调动，原班顶部会显示调到哪去了并可一键调回，接收班卡片会标注原班来源；大批量调班请重新导入名单文件。\n" +
                                 "• 自动匹配：课前 20 分钟 ～ 课后 30 分钟内，应用将自动为您切换锁定对应班级。\n" +
                                 "• 自动考勤：点名页顶部云上传图标或「更多」中可打开校管家同步。应用按「班级号+班型」匹配 α1/β1/β2/β3 当天课程，先显示已到/迟到/请假/未到预览，确认后才提交；所有已匹配学员（含未到、请假）统一按出勤并计费；已点名课程自动跳过，不发送微信/短信通知。\n" +
-                                "• 发送分享：导出时离线生成高清签到长图，直接调起安卓系统的“发送给”（支持微信、QQ等）。",
+                                "• 每日提醒：每天 18:00 使用本地通知检查今天课表；如果还有班级没有成功同步记录，会在通知栏提醒。不需要注册远程推送，但 Android 13+ 需允许通知权限。\n" +
+                                "• 发送分享：导出时离线生成高清签到长图，直接调起安卓系统的“发送给”（支持微信、QQ等）；分享后会询问是否继续同步校管家，当天已同步的班型不会重复提示。",
                         fontSize = 13.sp,
                         lineHeight = 20.sp,
                         color = Color(0xFF475569)

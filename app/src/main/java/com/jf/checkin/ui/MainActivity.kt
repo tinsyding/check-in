@@ -1,13 +1,18 @@
 package com.jf.checkin.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.navigation.compose.NavHost
@@ -23,6 +28,18 @@ import com.jf.checkin.ui.webview.JfBrowserScreen
 
 class MainActivity : ComponentActivity() {
 
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (!granted) {
+            Toast.makeText(
+                this,
+                "未开启通知权限，每天 18:00 的未同步校管家提醒将无法显示",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -31,6 +48,19 @@ class MainActivity : ComponentActivity() {
         val studentRepo = app.studentRepository
         val prefRepo = app.prefRepository
         val historyRepo = app.historyRepository
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            prefRepo.tmsDailyReminderEnabled &&
+            prefRepo.hasTmsCredentials() &&
+            !prefRepo.tmsNotificationPermissionAsked &&
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            prefRepo.tmsNotificationPermissionAsked = true
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
 
         // 交给 ViewModelStore 管理，Activity 重建时复用实例并在销毁时取消 viewModelScope
         val viewModelFactory = object : ViewModelProvider.Factory {

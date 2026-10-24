@@ -2,6 +2,7 @@ package com.jf.checkin.data.repository
 
 import android.content.Context
 import android.content.SharedPreferences
+import java.time.LocalDate
 
 class UserPrefRepository(context: Context) {
 
@@ -13,6 +14,9 @@ class UserPrefRepository(context: Context) {
         private const val KEY_PASSWORD = "jf_password"
         private const val KEY_TMS_USERNAME = "jf_tms_username"
         private const val KEY_TMS_PASSWORD = "jf_tms_password"
+        private const val KEY_TMS_SYNCED_CLASSES = "jf_tms_synced_classes"
+        private const val KEY_TMS_DAILY_REMINDER = "jf_tms_daily_reminder"
+        private const val KEY_TMS_NOTIFICATION_ASKED = "jf_tms_notification_asked"
         private const val KEY_LAST_CSV_CONTENT = "jf_last_csv_content"
         private const val KEY_LAST_IMPORT_TIME = "jf_last_import_time"
         private const val KEY_TEACHER_NAME = "jf_teacher_name"
@@ -122,6 +126,47 @@ class UserPrefRepository(context: Context) {
     }
 
     fun hasTmsCredentials(): Boolean = tmsUsername.isNotBlank() && tmsPassword.isNotBlank()
+
+    /** 每天 18:00 的未同步班级提醒，使用本地通知，不依赖远程推送。 */
+    var tmsDailyReminderEnabled: Boolean
+        get() = prefs.getBoolean(KEY_TMS_DAILY_REMINDER, true)
+        set(value) = prefs.edit().putBoolean(KEY_TMS_DAILY_REMINDER, value).apply()
+
+    var tmsNotificationPermissionAsked: Boolean
+        get() = prefs.getBoolean(KEY_TMS_NOTIFICATION_ASKED, false)
+        set(value) = prefs.edit().putBoolean(KEY_TMS_NOTIFICATION_ASKED, value).apply()
+
+    /**
+     * 记录某天已经完成校管家同步的班级（ClassName = 班级号 + 班型）。
+     * 只保留最近 30 天，避免偏好文件无限增长。
+     */
+    fun markTmsSynced(date: LocalDate, classNames: Collection<String>) {
+        val names = classNames.map { it.trim() }.filter { it.isNotBlank() }
+        if (names.isEmpty()) return
+
+        val keepFrom = date.minusDays(30)
+        val current = prefs.getStringSet(KEY_TMS_SYNCED_CLASSES, emptySet())
+            ?.toMutableSet()
+            ?: mutableSetOf()
+        current.removeAll { key ->
+            val rawDate = key.substringBefore('|', "")
+            val parsed = runCatching { LocalDate.parse(rawDate) }.getOrNull()
+            parsed == null || parsed.isBefore(keepFrom)
+        }
+        names.forEach { current.add("$date|$it") }
+        prefs.edit().putStringSet(KEY_TMS_SYNCED_CLASSES, current).apply()
+    }
+
+    fun getTmsSyncedClassNames(date: LocalDate): Set<String> {
+        val prefix = "$date|"
+        return prefs.getStringSet(KEY_TMS_SYNCED_CLASSES, emptySet())
+            .orEmpty()
+            .asSequence()
+            .filter { it.startsWith(prefix) }
+            .map { it.removePrefix(prefix) }
+            .filter { it.isNotBlank() }
+            .toSet()
+    }
 
     var lastCsvContent: String
         get() = prefs.getString(KEY_LAST_CSV_CONTENT, "") ?: ""

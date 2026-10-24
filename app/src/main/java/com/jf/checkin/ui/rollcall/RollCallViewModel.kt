@@ -8,6 +8,7 @@ import com.jf.checkin.data.model.AttendanceRecord
 import com.jf.checkin.data.model.AttendanceStatus
 import com.jf.checkin.data.model.Student
 import com.jf.checkin.data.remote.TmsAttendanceService
+import com.jf.checkin.data.remote.TmsAttendanceMapper
 import com.jf.checkin.data.remote.TmsCourseResult
 import com.jf.checkin.data.remote.TmsCredentials
 import com.jf.checkin.data.remote.TmsSyncPreview
@@ -16,6 +17,7 @@ import com.jf.checkin.data.repository.StudentRepository
 import com.jf.checkin.data.repository.UserPrefRepository
 import com.jf.checkin.logic.TableImageGenerator
 import com.jf.checkin.logic.TimeMatcher
+import com.jf.checkin.logic.TmsReminderPlanner
 import com.jf.checkin.util.ShareUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -335,6 +337,7 @@ class RollCallViewModel(
                     credentials = TmsCredentials(username, password)
                 )
                 lastTmsPreview = preview
+                recordAlreadyPointed(preview)
                 _tmsSyncState.value = TmsSyncState.Preview(preview)
             } catch (e: Exception) {
                 lastTmsPreview = null
@@ -364,6 +367,12 @@ class RollCallViewModel(
         viewModelScope.launch {
             try {
                 val results = tmsService.submit(preview, TmsCredentials(username, password))
+                val date = runCatching { LocalDate.parse(preview.date) }.getOrNull()
+                if (date != null) {
+                    val syncedNames = results.filter { it.success }.map { it.className } +
+                        preview.plans.filter { it.alreadyPointed }.map { it.className }
+                    prefRepository.markTmsSynced(date, syncedNames)
+                }
                 _tmsSyncState.value = TmsSyncState.Success(results)
             } catch (e: Exception) {
                 _tmsSyncState.value = TmsSyncState.Error(
@@ -376,6 +385,28 @@ class RollCallViewModel(
     fun clearTmsSyncState() {
         _tmsSyncState.value = TmsSyncState.Idle
         lastTmsPreview = null
+    }
+
+    fun hasTmsCredentials(): Boolean = prefRepository.hasTmsCredentials()
+
+    /** 分享长图后是否需要提示同步校管家：当前班今天还有班型没有同步记录。 */
+    fun shouldPromptTmsSync(): Boolean {
+        val classCode = _selectedClassCode.value ?: return false
+        val students = allStudents.value.filter { it.classCode == classCode }
+        if (students.isEmpty()) return false
+        val classNames = TmsReminderPlanner.classNamesFor(students)
+        if (classNames.isEmpty()) return false
+        val synced = prefRepository.getTmsSyncedClassNames(LocalDate.now())
+            .map { TmsAttendanceMapper.classNameKey(it) }
+            .toSet()
+        return classNames.any { TmsAttendanceMapper.classNameKey(it) !in synced }
+    }
+
+    private fun recordAlreadyPointed(preview: TmsSyncPreview) {
+        val alreadyPointed = preview.plans.filter { it.alreadyPointed }.map { it.className }
+        if (alreadyPointed.isEmpty()) return
+        val date = runCatching { LocalDate.parse(preview.date) }.getOrNull() ?: return
+        prefRepository.markTmsSynced(date, alreadyPointed)
     }
 
     /**
@@ -429,7 +460,7 @@ class RollCallViewModel(
     /**
      * 生成长图并调起系统“发送给”（微信等），并记录到历史
      */
-    fun exportAndShare(context: Context) {
+    fun exportAndShare(context: Context, onShared: () -> Unit = {}) {
         val currentCode = _selectedClassCode.value ?: return
         val inStudents = currentStudents.value
         val movedOut = allStudents.value.filter {
@@ -459,6 +490,7 @@ class RollCallViewModel(
                     }
                 }
                 ShareUtil.shareImage(context, imageFile, "$currentCode 线下签到表")
+                onShared()
             } catch (e: Exception) {
                 Toast.makeText(context, "生成签到长图失败: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
             } finally {
