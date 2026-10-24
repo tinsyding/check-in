@@ -55,10 +55,11 @@ class StudentRepository(private val prefRepo: UserPrefRepository) {
             val remark = remarks[s.studentId] ?: ""
             merged.add(if (remark.isNotBlank() && cur.remark != remark) cur.copy(remark = remark) else cur)
         }
-        // 手动部分：手动自带 remark 优先，无则用备注表兜底
+        // 手动部分：手动自带 remark 优先，无则用备注表兜底。
+        // 状态统一由 attendance_statuses 表恢复，避免手动名单里的旧状态在清除签到后“复活”。
         for (m in manual) {
             val remark = m.remark.ifBlank { remarks[m.studentId] ?: "" }
-            merged.add(if (m.remark != remark) m.copy(remark = remark) else m)
+            merged.add(m.copy(status = AttendanceStatus.UNCHECKED, remark = remark))
         }
         // 叠加持久化的签到状态（重启 App 后保留）
         val statuses = prefRepo.getAttendanceStatuses()
@@ -271,9 +272,8 @@ class StudentRepository(private val prefRepo: UserPrefRepository) {
     fun resetClass(classCode: String) {
         _students.value = _students.value.map {
             if (it.classCode == classCode) {
-                // 原生线上学生（α1/β1）重置仍为 ONLINE，线下学生重置为 UNCHECKED
-                val isOriginallyOnline = it.classFormat !in com.jf.checkin.data.parser.StudentCsvParser.OFFLINE_FORMATS
-                it.copy(status = if (isOriginallyOnline) AttendanceStatus.ONLINE else AttendanceStatus.UNCHECKED)
+                // 原生线上学生（α1/β1）重置仍为 ONLINE，线下学生（含手动调入）重置为 UNCHECKED
+                it.copy(status = StudentCsvParser.defaultStatus(it))
             } else {
                 it
             }
@@ -299,8 +299,7 @@ class StudentRepository(private val prefRepo: UserPrefRepository) {
     /** 清空全校所有班级的签到状态（回到默认状态：原生线上为线上，线下为未到） */
     fun resetAllStatuses() {
         _students.value = _students.value.map {
-            val isOriginallyOnline = it.classFormat !in com.jf.checkin.data.parser.StudentCsvParser.OFFLINE_FORMATS
-            val target = if (isOriginallyOnline) AttendanceStatus.ONLINE else AttendanceStatus.UNCHECKED
+            val target = StudentCsvParser.defaultStatus(it)
             if (it.status == target) it else it.copy(status = target)
         }
         persistStatuses()

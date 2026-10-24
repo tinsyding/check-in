@@ -194,7 +194,7 @@ fun StudentCard(
                                 AttendanceStatus.PRESENT -> "已到"
                                 AttendanceStatus.LATE -> "迟到"
                                 AttendanceStatus.LEAVE -> "请假"
-                                AttendanceStatus.ONLINE -> if (student.classFormat in StudentCsvParser.OFFLINE_FORMATS) "转线上 · 免签" else "线上 · 免签"
+                                AttendanceStatus.ONLINE -> if (StudentCsvParser.isOfflineStudent(student)) "转线上 · 免签" else "线上 · 免签"
                                 AttendanceStatus.UNCHECKED -> "未到"
                             },
                             fontSize = 13.sp,
@@ -236,7 +236,7 @@ fun StudentCard(
                 }
             )
             DropdownMenuItem(
-                text = { Text(if (student.classFormat in StudentCsvParser.OFFLINE_FORMATS) "转线上" else "线上", color = AccentPurple, fontWeight = FontWeight.SemiBold) },
+                text = { Text(if (StudentCsvParser.isOfflineStudent(student)) "转线上" else "线上", color = AccentPurple, fontWeight = FontWeight.SemiBold) },
                 leadingIcon = { Icon(Icons.Default.Videocam, contentDescription = null, tint = AccentPurple) },
                 onClick = {
                     onSetStatus(AttendanceStatus.ONLINE)

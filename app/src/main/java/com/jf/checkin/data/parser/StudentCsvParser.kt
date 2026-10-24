@@ -8,16 +8,30 @@ object StudentCsvParser {
     // β2 和 β3 是线下需要签到的；其他（如 α1, β1）是线上，无需签到
     val OFFLINE_FORMATS = setOf("β2", "β3")
 
+    /**
+     * 判断学生是否属于线下需签到人员。
+     * 手动调入学生虽然 classFormat 为“手动”，但同样属于线下，不能按线上处理。
+     */
+    fun isOfflineFormat(classFormat: String): Boolean =
+        classFormat == "手动" || classFormat in OFFLINE_FORMATS
+
+    fun isOfflineStudent(student: Student): Boolean =
+        student.isManual || isOfflineFormat(student.classFormat)
+
+    /** 重置点名时使用的默认状态：线下（含手动调入）为未到，原生线上为免签线上。 */
+    fun defaultStatus(student: Student): AttendanceStatus =
+        if (isOfflineStudent(student)) AttendanceStatus.UNCHECKED else AttendanceStatus.ONLINE
+
     fun parse(csvContent: String): List<Student> {
         val students = mutableListOf<Student>()
         val lines = csvContent.lines()
 
-        for ((index, rawLine) in lines.withIndex()) {
+        for (rawLine in lines) {
             val line = rawLine.trim().replace("\uFEFF", "")
             if (line.isBlank()) continue
 
-            // 跳过表头
-            if (index == 0 && (line.contains("学号") || line.contains("姓名"))) {
+            // 跳过表头（兼容表头前存在空行/BOM 的情况，仅在没有解析出任何学生时判断）
+            if (students.isEmpty() && line.contains("学号") && line.contains("姓名")) {
                 continue
             }
 
@@ -31,7 +45,7 @@ object StudentCsvParser {
                 val checkInMark = if (parts.size >= 6) parts[5].trim() else ""
 
                 if (studentId.isNotBlank() && name.isNotBlank() && classCode.isNotBlank()) {
-                    val initialStatus = if (OFFLINE_FORMATS.contains(classFormat)) {
+                    val initialStatus = if (isOfflineFormat(classFormat)) {
                         when (checkInMark) {
                             "√", "对号", "已到", "出勤" -> AttendanceStatus.PRESENT
                             "迟到" -> AttendanceStatus.LATE

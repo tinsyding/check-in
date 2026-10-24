@@ -7,6 +7,10 @@ import androidx.lifecycle.viewModelScope
 import com.jf.checkin.data.model.AttendanceRecord
 import com.jf.checkin.data.model.AttendanceStatus
 import com.jf.checkin.data.model.Student
+import com.jf.checkin.data.remote.TmsAttendanceService
+import com.jf.checkin.data.remote.TmsCourseResult
+import com.jf.checkin.data.remote.TmsCredentials
+import com.jf.checkin.data.remote.TmsSyncPreview
 import com.jf.checkin.data.repository.HistoryRepository
 import com.jf.checkin.data.repository.StudentRepository
 import com.jf.checkin.data.repository.UserPrefRepository
@@ -24,9 +28,19 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.UUID
+
+sealed interface TmsSyncState {
+    data object Idle : TmsSyncState
+    data object Loading : TmsSyncState
+    data class Preview(val preview: TmsSyncPreview) : TmsSyncState
+    data object Submitting : TmsSyncState
+    data class Success(val results: List<TmsCourseResult>) : TmsSyncState
+    data class Error(val message: String, val needsSettings: Boolean = false) : TmsSyncState
+}
 
 data class ClassInfo(
     val classCode: String,
@@ -74,6 +88,11 @@ class RollCallViewModel(
 
     private val _nameplateFontStyle = MutableStateFlow(com.jf.checkin.logic.NameplateFontStyle.BOLD_STANDARD)
     val nameplateFontStyle: StateFlow<com.jf.checkin.logic.NameplateFontStyle> = _nameplateFontStyle.asStateFlow()
+
+    private val tmsService = TmsAttendanceService()
+    private val _tmsSyncState = MutableStateFlow<TmsSyncState>(TmsSyncState.Idle)
+    val tmsSyncState: StateFlow<TmsSyncState> = _tmsSyncState.asStateFlow()
+    private var lastTmsPreview: TmsSyncPreview? = null
 
     fun setNameplateFontStyle(style: com.jf.checkin.logic.NameplateFontStyle) {
         _nameplateFontStyle.value = style
@@ -133,7 +152,10 @@ class RollCallViewModel(
                 presentCount = list.count { it.status == AttendanceStatus.PRESENT },
                 onlineCount = list.count { it.status == AttendanceStatus.ONLINE }
             )
-        }.sortedBy { it.classTime }
+        }.sortedWith(
+            compareBy<ClassInfo> { TimeMatcher.scheduleSortKey(it.classTime) }
+                .thenBy { it.classTime }
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // 当前选中班级的学生名单
@@ -157,10 +179,16 @@ class RollCallViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
-        // 监听学生列表加载完成，若当前未选中班级，尝试时间智能匹配或默认选第一个
+        // 监听学生列表变化：未选班或当前班级已不存在时，重新匹配/兜底选择
         viewModelScope.launch {
             allStudents.collect { students ->
-                if (students.isNotEmpty() && _selectedClassCode.value == null) {
+                if (students.isEmpty()) {
+                    _selectedClassCode.value = null
+                    return@collect
+                }
+
+                val current = _selectedClassCode.value
+                if (current == null || students.none { it.classCode == current }) {
                     val matched = TimeMatcher.findMatchingClass(students)
                     _selectedClassCode.value = matched ?: students.first().classCode
                 }
@@ -272,6 +300,85 @@ class RollCallViewModel(
     }
 
     /**
+     * 登录校管家并把当前班级的点名状态匹配到当天课程，结果先进入预览，确认后才提交。
+     * @param date 默认今天；补课或跨天点名时可在预览弹窗中修改后重新匹配。
+     */
+    fun startTmsSync(date: LocalDate = LocalDate.now()) {
+        val classCode = _selectedClassCode.value
+        if (classCode.isNullOrBlank()) {
+            _tmsSyncState.value = TmsSyncState.Error("请先选择班级")
+            return
+        }
+        val students = allStudents.value.filter { it.classCode == classCode }
+        if (students.isEmpty()) {
+            _tmsSyncState.value = TmsSyncState.Error("当前班级暂无学生数据")
+            return
+        }
+
+        val username = prefRepository.tmsUsername
+        val password = prefRepository.tmsPassword
+        if (username.isBlank() || password.isBlank()) {
+            _tmsSyncState.value = TmsSyncState.Error(
+                "请先在设置中填写校管家（TMS）账号和密码",
+                needsSettings = true
+            )
+            return
+        }
+
+        _tmsSyncState.value = TmsSyncState.Loading
+        viewModelScope.launch {
+            try {
+                val preview = tmsService.preview(
+                    students = students,
+                    classCode = classCode,
+                    date = date,
+                    credentials = TmsCredentials(username, password)
+                )
+                lastTmsPreview = preview
+                _tmsSyncState.value = TmsSyncState.Preview(preview)
+            } catch (e: Exception) {
+                lastTmsPreview = null
+                _tmsSyncState.value = TmsSyncState.Error(
+                    e.localizedMessage ?: "匹配校管家课程失败"
+                )
+            }
+        }
+    }
+
+    /** 确认预览后，把可同步的课程提交到校管家。 */
+    fun submitTmsSync() {
+        val preview = lastTmsPreview ?: return
+        if (!preview.canSubmit) return
+
+        val username = prefRepository.tmsUsername
+        val password = prefRepository.tmsPassword
+        if (username.isBlank() || password.isBlank()) {
+            _tmsSyncState.value = TmsSyncState.Error(
+                "请先在设置中填写校管家（TMS）账号和密码",
+                needsSettings = true
+            )
+            return
+        }
+
+        _tmsSyncState.value = TmsSyncState.Submitting
+        viewModelScope.launch {
+            try {
+                val results = tmsService.submit(preview, TmsCredentials(username, password))
+                _tmsSyncState.value = TmsSyncState.Success(results)
+            } catch (e: Exception) {
+                _tmsSyncState.value = TmsSyncState.Error(
+                    e.localizedMessage ?: "同步校管家考勤失败"
+                )
+            }
+        }
+    }
+
+    fun clearTmsSyncState() {
+        _tmsSyncState.value = TmsSyncState.Idle
+        lastTmsPreview = null
+    }
+
+    /**
      * 保存长图到系统相册并记录到历史
      */
     fun downloadAndSaveImage(context: Context) {
@@ -292,10 +399,19 @@ class RollCallViewModel(
                 val classTime = inStudents.firstOrNull()?.classTime ?: movedOut.firstOrNull()?.classTime ?: ""
                 val currentTeacher = getEffectiveTeacherName()
                 val success = withContext(Dispatchers.IO) {
-                    // 同时生成 cache 文件用于历史记录
-                    val cacheFile = TableImageGenerator.generateTableImageFile(context, currentCode, classTime, currentTeacher, exportStudents)
-                    saveHistory(cacheFile, currentCode, classTime, inStudents, movedOut.size)
-                    TableImageGenerator.saveToGallery(context, currentCode, classTime, currentTeacher, exportStudents)
+                    // 只绘制一次 Bitmap，同时用于历史缓存文件与相册保存
+                    val bitmap = TableImageGenerator.createTableBitmap(currentCode, classTime, currentTeacher, exportStudents)
+                    try {
+                        val cacheFile = TableImageGenerator.generateTableImageFile(
+                            context, currentCode, classTime, currentTeacher, exportStudents, bitmap
+                        )
+                        saveHistory(cacheFile, currentCode, classTime, inStudents, movedOut.size)
+                        TableImageGenerator.saveToGallery(
+                            context, currentCode, classTime, currentTeacher, exportStudents, bitmap
+                        )
+                    } finally {
+                        bitmap.recycle()
+                    }
                 }
                 if (success) {
                     Toast.makeText(context, "签到长图已成功保存至相册（Pictures/班级签到表）！", Toast.LENGTH_LONG).show()
@@ -331,9 +447,16 @@ class RollCallViewModel(
                 val classTime = inStudents.firstOrNull()?.classTime ?: movedOut.firstOrNull()?.classTime ?: ""
                 val currentTeacher = getEffectiveTeacherName()
                 val imageFile = withContext(Dispatchers.IO) {
-                    val file = TableImageGenerator.generateTableImageFile(context, currentCode, classTime, currentTeacher, exportStudents)
-                    saveHistory(file, currentCode, classTime, inStudents, movedOut.size)
-                    file
+                    val bitmap = TableImageGenerator.createTableBitmap(currentCode, classTime, currentTeacher, exportStudents)
+                    try {
+                        val file = TableImageGenerator.generateTableImageFile(
+                            context, currentCode, classTime, currentTeacher, exportStudents, bitmap
+                        )
+                        saveHistory(file, currentCode, classTime, inStudents, movedOut.size)
+                        file
+                    } finally {
+                        bitmap.recycle()
+                    }
                 }
                 ShareUtil.shareImage(context, imageFile, "$currentCode 线下签到表")
             } catch (e: Exception) {
@@ -481,7 +604,8 @@ class RollCallViewModel(
                     )
                 }
                 val jobTitle = if (isTestOneSheet) "$currentCode 席卡测试单页" else "$currentCode 班级席卡"
-                com.jf.checkin.util.SystemPrintUtil.printPdf(context, pdfFile, jobTitle)
+                val pageCount = if (isTestOneSheet) 1 else students.size
+                com.jf.checkin.util.SystemPrintUtil.printPdf(context, pdfFile, jobTitle, pageCount)
             } catch (e: Exception) {
                 Toast.makeText(context, "调起系统打印失败: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
             } finally {

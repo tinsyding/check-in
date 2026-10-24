@@ -8,6 +8,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -18,8 +20,6 @@ import com.jf.checkin.ui.rollcall.RollCallViewModel
 import com.jf.checkin.ui.settings.SettingsScreen
 import com.jf.checkin.ui.theme.JFCheckInTheme
 import com.jf.checkin.ui.webview.JfBrowserScreen
-import java.io.BufferedReader
-import java.io.InputStreamReader
 
 class MainActivity : ComponentActivity() {
 
@@ -32,7 +32,14 @@ class MainActivity : ComponentActivity() {
         val prefRepo = app.prefRepository
         val historyRepo = app.historyRepository
 
-        val rollCallViewModel = RollCallViewModel(studentRepo, prefRepo, historyRepo)
+        // 交给 ViewModelStore 管理，Activity 重建时复用实例并在销毁时取消 viewModelScope
+        val viewModelFactory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                return RollCallViewModel(studentRepo, prefRepo, historyRepo) as T
+            }
+        }
+        val rollCallViewModel = ViewModelProvider(this, viewModelFactory)[RollCallViewModel::class.java]
 
         setContent {
             JFCheckInTheme {

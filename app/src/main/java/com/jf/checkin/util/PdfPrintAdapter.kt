@@ -13,7 +13,10 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 
-class PdfPrintAdapter(private val file: File) : PrintDocumentAdapter() {
+class PdfPrintAdapter(
+    private val file: File,
+    private val pageCount: Int = 1
+) : PrintDocumentAdapter() {
     override fun onLayout(
         oldAttributes: PrintAttributes?,
         newAttributes: PrintAttributes?,
@@ -27,6 +30,7 @@ class PdfPrintAdapter(private val file: File) : PrintDocumentAdapter() {
         }
         val info = PrintDocumentInfo.Builder(file.name)
             .setContentType(PrintDocumentInfo.CONTENT_TYPE_DOCUMENT)
+            .setPageCount(pageCount.coerceAtLeast(1))
             .build()
         callback?.onLayoutFinished(info, true)
     }
@@ -51,7 +55,12 @@ class PdfPrintAdapter(private val file: File) : PrintDocumentAdapter() {
 }
 
 object SystemPrintUtil {
-    fun printPdf(context: Context, file: File, jobName: String = "席卡打印") {
+    fun printPdf(
+        context: Context,
+        file: File,
+        jobName: String = "席卡打印",
+        pageCount: Int = 1
+    ) {
         val printManager = context.getSystemService(Context.PRINT_SERVICE) as? PrintManager
         val attributes = PrintAttributes.Builder()
             .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
@@ -61,7 +70,7 @@ object SystemPrintUtil {
             .build()
         printManager?.print(
             jobName,
-            PdfPrintAdapter(file),
+            PdfPrintAdapter(file, pageCount),
             attributes
         )
     }

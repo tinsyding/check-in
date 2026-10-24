@@ -1,15 +1,45 @@
 package com.jf.checkin.logic
 
 import com.jf.checkin.data.model.Student
-import java.time.DayOfWeek
 import java.time.LocalDateTime
-import java.time.LocalTime
-import java.time.format.DateTimeFormatter
 import java.util.regex.Pattern
+
+data class ScheduleSlot(val dayIndex: Int, val startMinutes: Int)
 
 object TimeMatcher {
 
     private val TIME_PATTERN = Pattern.compile("(周[一二三四五六日天])\\s*(\\d{1,2}:\\d{2})~(\\d{1,2}:\\d{2})")
+
+    /**
+     * 解析“周六07:50~09:50”形式的课表时间。
+     * dayIndex 使用 java.time.DayOfWeek 的编号：周一=1，周日=7。
+     */
+    fun parseSchedule(classTime: String): ScheduleSlot? {
+        val matcher = TIME_PATTERN.matcher(classTime)
+        if (!matcher.find()) return null
+
+        val dayIndex = when (matcher.group(1)) {
+            "周一" -> 1
+            "周二" -> 2
+            "周三" -> 3
+            "周四" -> 4
+            "周五" -> 5
+            "周六" -> 6
+            "周日", "周天" -> 7
+            else -> return null
+        }
+
+        val timeParts = matcher.group(2)?.split(':') ?: return null
+        val hour = timeParts.getOrNull(0)?.toIntOrNull() ?: return null
+        val minute = timeParts.getOrNull(1)?.toIntOrNull() ?: return null
+        if (hour !in 0..23 || minute !in 0..59) return null
+
+        return ScheduleSlot(dayIndex = dayIndex, startMinutes = hour * 60 + minute)
+    }
+
+    /** 供班级列表排序使用的自然课表顺序：周一靠前，周日靠后；无法解析的排到最后。 */
+    fun scheduleSortKey(classTime: String): Int =
+        parseSchedule(classTime)?.let { it.dayIndex * 24 * 60 + it.startMinutes } ?: Int.MAX_VALUE
 
     /**
      * 根据当前时间自动匹配班级
@@ -23,47 +53,23 @@ object TimeMatcher {
             .groupBy { it.classCode }
             .mapValues { entry -> entry.value.firstOrNull()?.classTime ?: "" }
 
-        val currentDayChinese = toChineseDayOfWeek(now.dayOfWeek)
-        val currentTime = now.toLocalTime()
+        val currentDayIndex = now.dayOfWeek.value
+        val currentMinutes = now.hour * 60 + now.minute
 
         val matchingClasses = mutableListOf<String>()
 
         for ((classCode, timeStr) in classTimes) {
-            val matcher = TIME_PATTERN.matcher(timeStr)
-            if (matcher.find()) {
-                val day = matcher.group(1)
-                val startStr = matcher.group(2)
-                val isSameDay = day == currentDayChinese || (day == "周天" && currentDayChinese == "周日")
+            val slot = parseSchedule(timeStr) ?: continue
+            if (slot.dayIndex != currentDayIndex) continue
 
-                if (isSameDay) {
-                    try {
-                        val startTime = LocalTime.parse(startStr, DateTimeFormatter.ofPattern("H:mm"))
-                        val windowStart = startTime.minusMinutes(20)
-                        val windowEnd = startTime.plusMinutes(30)
-
-                        if (!currentTime.isBefore(windowStart) && !currentTime.isAfter(windowEnd)) {
-                            matchingClasses.add(classCode)
-                        }
-                    } catch (_: Exception) {
-                        // 格式解析异常忽略
-                    }
-                }
+            val windowStart = slot.startMinutes - 20
+            val windowEnd = slot.startMinutes + 30
+            if (currentMinutes in windowStart..windowEnd) {
+                matchingClasses.add(classCode)
             }
         }
 
         // 如果刚好匹配到唯一班级，返回该班级代码
         return if (matchingClasses.size == 1) matchingClasses.first() else null
-    }
-
-    private fun toChineseDayOfWeek(dayOfWeek: DayOfWeek): String {
-        return when (dayOfWeek) {
-            DayOfWeek.MONDAY -> "周一"
-            DayOfWeek.TUESDAY -> "周二"
-            DayOfWeek.WEDNESDAY -> "周三"
-            DayOfWeek.THURSDAY -> "周四"
-            DayOfWeek.FRIDAY -> "周五"
-            DayOfWeek.SATURDAY -> "周六"
-            DayOfWeek.SUNDAY -> "周日"
-        }
     }
 }

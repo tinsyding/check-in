@@ -4,6 +4,7 @@ import com.jf.checkin.data.model.Student
 import com.jf.checkin.logic.TimeMatcher
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDateTime
 
@@ -40,5 +41,17 @@ class TimeMatcherTest {
         // 周三同一时间 -> 不应该命中周六/周日的班
         val timeWednesday = LocalDateTime.of(2026, 9, 16, 7, 45)
         assertNull(TimeMatcher.findMatchingClass(sampleStudents, timeWednesday))
+    }
+
+    @Test
+    fun testScheduleSortOrder() {
+        val monday = TimeMatcher.scheduleSortKey("周一07:50~09:50")
+        val tuesday = TimeMatcher.scheduleSortKey("周二07:50~09:50")
+        val sunday = TimeMatcher.scheduleSortKey("周日10:20~12:20")
+
+        assertTrue(monday < tuesday)
+        assertTrue(tuesday < sunday)
+        assertEquals(7 * 24 * 60 + 10 * 60 + 20, sunday)
+        assertEquals(Int.MAX_VALUE, TimeMatcher.scheduleSortKey("时间待定"))
     }
 }

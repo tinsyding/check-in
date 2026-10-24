@@ -1,8 +1,10 @@
 package com.jf.checkin
 
 import com.jf.checkin.data.model.AttendanceStatus
+import com.jf.checkin.data.model.Student
 import com.jf.checkin.data.parser.StudentCsvParser
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -34,5 +36,42 @@ class StudentCsvParserTest {
 
         // 线下学生初始状态为 UNCHECKED (待签到)
         assertTrue(offlineStudents.all { it.status == AttendanceStatus.UNCHECKED })
+    }
+
+    @Test
+    fun testHeaderAfterLeadingBlankLinesIsSkipped() {
+        val content = "\n\n学号,姓名,班级名称,上课时间,上课形式,签到\n" +
+            "55136,黄天煦,2026028MAA12,周六07:50~09:50,β2,\n"
+        val students = StudentCsvParser.parse(content)
+
+        assertEquals(1, students.size)
+        assertEquals("55136", students.first().studentId)
+    }
+
+    @Test
+    fun testManualStudentIsTreatedAsOffline() {
+        val manual = Student(
+            studentId = "99999",
+            name = "手动调入",
+            classCode = "2026028MAA12",
+            classTime = "周六07:50~09:50",
+            classFormat = "手动",
+            isManual = true
+        )
+        assertTrue(StudentCsvParser.isOfflineStudent(manual))
+        // 兼容历史数据里 isManual 标记丢失、但上课形式仍为“手动”的情况
+        assertTrue(StudentCsvParser.isOfflineStudent(manual.copy(isManual = false)))
+        // 重置后手动调入学生必须回到“未到”，不能变成线上免签
+        assertEquals(AttendanceStatus.UNCHECKED, StudentCsvParser.defaultStatus(manual))
+
+        val online = Student(
+            studentId = "35569",
+            name = "线上学生",
+            classCode = "2026028MAA12",
+            classTime = "周六07:50~09:50",
+            classFormat = "α1"
+        )
+        assertFalse(StudentCsvParser.isOfflineStudent(online))
+        assertEquals(AttendanceStatus.ONLINE, StudentCsvParser.defaultStatus(online))
     }
 }

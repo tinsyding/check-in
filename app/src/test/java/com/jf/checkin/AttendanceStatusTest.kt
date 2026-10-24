@@ -2,6 +2,7 @@ package com.jf.checkin
 
 import com.jf.checkin.data.model.AttendanceRecord
 import com.jf.checkin.data.model.AttendanceStatus
+import com.jf.checkin.ui.rollcall.ClassInfo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -42,7 +43,7 @@ class AttendanceStatusTest {
 
     @Test
     fun testClassInfoOfflineCount() {
-        val info = com.jf.checkin.ui.rollcall.RollCallViewModel.ClassInfo(
+        val info = ClassInfo(
             classCode = "2026028MAA12",
             classTime = "周六07:50~09:50",
             totalCount = 20,

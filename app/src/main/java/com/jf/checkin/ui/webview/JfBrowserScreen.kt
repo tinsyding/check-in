@@ -28,6 +28,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.jf.checkin.data.parser.StudentCsvParser
 import com.jf.checkin.data.repository.StudentRepository
 import com.jf.checkin.data.repository.UserPrefRepository
 import kotlinx.coroutines.Dispatchers
@@ -68,6 +70,14 @@ fun JfBrowserScreen(
 
     val targetUrl = "https://jf-alpha.com/dashboard/"
     val targetHost = "jf-alpha.com"
+
+    DisposableEffect(Unit) {
+        onDispose {
+            webViewInstance?.stopLoading()
+            webViewInstance?.destroy()
+            webViewInstance = null
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -105,8 +115,10 @@ fun JfBrowserScreen(
                         webViewClient = object : WebViewClient() {
                             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                                 val url = request?.url ?: return false
-                                // 限制只允许在 jf-alpha.com 域名内浏览
-                                return if (url.host?.contains(targetHost) == true) {
+                                // 限制只允许在 jf-alpha.com 及其子域名内浏览（防止 evil-jf-alpha.com 绕过）
+                                val host = url.host?.lowercase().orEmpty()
+                                val allowed = host == targetHost || host.endsWith(".$targetHost")
+                                return if (allowed) {
                                     false
                                 } else {
                                     Toast.makeText(ctx, "受限浏览器：仅允许访问 $targetHost", Toast.LENGTH_SHORT).show()
@@ -127,10 +139,13 @@ fun JfBrowserScreen(
                                 val user = prefRepository.username
                                 val pass = prefRepository.password
                                 if (user.isNotBlank() || pass.isNotBlank()) {
+                                    // 使用 JSON 转义，避免密码中的引号/反斜杠破坏注入脚本
+                                    val uJson = org.json.JSONObject.quote(user)
+                                    val pJson = org.json.JSONObject.quote(pass)
                                     val jsInjection = """
                                         (function() {
-                                            const u = '$user';
-                                            const p = '$pass';
+                                            const u = $uJson;
+                                            const p = $pJson;
                                             const userInputs = document.querySelectorAll('input[type="text"], input[type="email"], input[name*="user"], input[id*="user"]');
                                             const passInputs = document.querySelectorAll('input[type="password"]');
                                             if (userInputs.length > 0 && u) {
@@ -169,8 +184,14 @@ fun JfBrowserScreen(
 
                                         if (csvText.isNotBlank()) {
                                             studentRepository.loadFromCsv(csvText)
-                                            val offlineCount = studentRepository.students.value.size
-                                            Toast.makeText(ctx, "导入成功！已自动录入线下签到学生 $offlineCount 人", Toast.LENGTH_LONG).show()
+                                            val imported = studentRepository.students.value
+                                            val offlineCount = imported.count { StudentCsvParser.isOfflineStudent(it) }
+                                            val onlineCount = imported.size - offlineCount
+                                            Toast.makeText(
+                                                ctx,
+                                                "导入成功！线下需签到 $offlineCount 人，线上免签 $onlineCount 人",
+                                                Toast.LENGTH_LONG
+                                            ).show()
                                             // 导入后自动切回点名主界面
                                             onNavigateBack()
                                         } else {

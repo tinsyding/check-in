@@ -4,7 +4,7 @@
 [![Latest Release](https://img.shields.io/github/v/release/tinsyding/check-in?color=blue&label=release)](https://github.com/tinsyding/check-in/releases)
 [![Platform](https://img.shields.io/badge/Platform-Android%208.0%2B-green.svg)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-orange.svg)](https://kotlinlang.org)
-[![Compose](https://img.shields.io/badge/Jetpack%20Compose-BOM%202024.09.00-4285F4.svg)](https://developer.android.com/jetpack/compose)
+[![Compose](https://img.shields.io/badge/Jetpack%20Compose-BOM%202024.11.00-4285F4.svg)](https://developer.android.com/jetpack/compose)
 
 现代、高效、轻量级的 Android 课堂与培训签到管理工具。支持学生名单智能匹配、一键全到/补录、席卡 PDF 生成与局域网网络打印、考勤长图分享、以及内置教务系统网页下载名单等丰富功能。
 
@@ -17,7 +17,7 @@
 - **一键全到 / 快速切换**：支持“全到/取消全到”快速切换，单指点按快速标记考勤。
 - **课表时间智能匹配**：根据当前星期与上下课时间段，自动匹配并推荐当前上课班级。
 - **人员动态调度**：支持手动加人、临时调班、调出学生一键调回、修改学生备注等。
-- **考勤状态持久化**：点名状态即时保存至 DataStore，退出应用或切换页面不丢失。
+- **考勤状态持久化**：点名状态即时保存至本地（SharedPreferences），退出应用或切换页面不丢失。
 - **全校状态一键清空**：支持全校或当前班级考勤重置，便于每日点名重开。
 
 ### 2. 🪪 A4 席卡生成与局域网网络打印
@@ -37,6 +37,12 @@
 - **内置 Web 浏览器**：支持在应用内直接登录教务/培训后台系统，一键下载并自动解析学生名单 CSV。
 - **本地 CSV 灵活导入**：支持标准 CSV 格式导入学生名单（包含班级代号、学号、姓名、星期与时间等）。
 
+### 6. ☁️ 校管家（TMS）自动考勤
+- **点名后一键同步**：点击点名页顶部云上传图标，自动登录校管家并匹配当天课程。
+- **提交前安全预览**：展示已到/迟到/请假/未到人数、未匹配学员与课消金额，确认后才写入校管家。
+- **四种班型都同步**：按「班级号+班型」匹配 α1/β1/β2/β3 当天课程；线上课也会提交，不再跳过。
+- **全部按出勤计费**：已匹配学员无论本地是已到、迟到、请假还是未到，都会按出勤提交并计费；跳过已点名课程，不发送微信/短信通知。
+
 ---
 
 ## 🛠️ 技术架构与选型
@@ -47,7 +53,8 @@
 - **UI 框架**：[Jetpack Compose](https://developer.android.com/jetpack/compose) + Material Design 3 (M3)
 - **架构模式**：MVVM (Model-View-ViewModel) + 单向数据流 (UDF)
 - **导航组件**：[Navigation Compose](https://developer.android.com/jetpack/compose/navigation)
-- **数据存储**：[Jetpack DataStore (Preferences)](https://developer.android.com/topic/libraries/architecture/datastore) 轻量持久化
+- **数据存储**：SharedPreferences 轻量持久化（含教务系统与校管家账密）+ JSON 文件归档历史记录
+- **校管家同步**：基于 `HttpURLConnection` + `org.json` 的 HTTPS API 客户端，无需 WebView 即可完成登录、课程匹配与考勤提交
 - **图形与文档生成**：
   - `android.graphics.pdf.PdfDocument` 生成矢量席卡
   - `android.graphics.Canvas` 高清长图绘制
@@ -73,7 +80,8 @@ check-in/
 │   │       │   ├── data/
 │   │       │   │   ├── model/               # 数据实体 (Student, AttendanceRecord 等)
 │   │       │   │   ├── parser/              # CSV 学生名单解析器
-│   │       │   │   └── repository/          # 数据仓库 (DataStore 存储与学生管理)
+│   │       │   │   ├── remote/              # 校管家 (TMS) 登录、课程匹配与考勤同步客户端
+│   │       │   │   └── repository/          # 数据仓库 (SharedPreferences/JSON 存储与学生管理)
 │   │       │   ├── logic/                   # 业务逻辑 (PDF生成, 长图生成, 网络打印, 时间匹配)
 │   │       │   └── ui/
 │   │       │       ├── MainActivity.kt      # 宿主 Activity 与导航入口

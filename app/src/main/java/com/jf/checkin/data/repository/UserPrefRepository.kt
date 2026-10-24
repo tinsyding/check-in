@@ -11,6 +11,8 @@ class UserPrefRepository(context: Context) {
     companion object {
         private const val KEY_USERNAME = "jf_username"
         private const val KEY_PASSWORD = "jf_password"
+        private const val KEY_TMS_USERNAME = "jf_tms_username"
+        private const val KEY_TMS_PASSWORD = "jf_tms_password"
         private const val KEY_LAST_CSV_CONTENT = "jf_last_csv_content"
         private const val KEY_LAST_IMPORT_TIME = "jf_last_import_time"
         private const val KEY_TEACHER_NAME = "jf_teacher_name"
@@ -102,6 +104,24 @@ class UserPrefRepository(context: Context) {
     var password: String
         get() = prefs.getString(KEY_PASSWORD, "") ?: ""
         set(value) = prefs.edit().putString(KEY_PASSWORD, value).apply()
+
+    /** 校管家（TMS）自动考勤账号，和 jf-alpha.com 的网页账密分开保存。 */
+    var tmsUsername: String
+        get() = prefs.getString(KEY_TMS_USERNAME, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_TMS_USERNAME, value).apply()
+
+    var tmsPassword: String
+        get() = prefs.getString(KEY_TMS_PASSWORD, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_TMS_PASSWORD, value).apply()
+
+    fun saveTmsCredentials(user: String, pass: String) {
+        prefs.edit()
+            .putString(KEY_TMS_USERNAME, user)
+            .putString(KEY_TMS_PASSWORD, pass)
+            .apply()
+    }
+
+    fun hasTmsCredentials(): Boolean = tmsUsername.isNotBlank() && tmsPassword.isNotBlank()
 
     var lastCsvContent: String
         get() = prefs.getString(KEY_LAST_CSV_CONTENT, "") ?: ""

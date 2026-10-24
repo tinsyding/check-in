@@ -1,7 +1,12 @@
 package com.jf.checkin.ui.rollcall
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -24,10 +30,13 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Download
@@ -62,6 +71,7 @@ import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -79,10 +89,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.jf.checkin.data.model.AttendanceStatus
+import com.jf.checkin.data.remote.TmsCoursePlan
+import com.jf.checkin.data.remote.TmsCourseResult
+import com.jf.checkin.data.remote.TmsSyncPreview
 import com.jf.checkin.ui.theme.AccentGreen
 import com.jf.checkin.logic.NameplateFontStyle
 import com.jf.checkin.ui.theme.PrimaryBlue
+import java.time.LocalDate
+import java.util.Locale
 
 enum class PrintChannel(val label: String) {
     RAW_9100("9100直发"),
@@ -110,6 +126,7 @@ fun RollCallScreen(
     val isAllPresent by viewModel.isAllPresent.collectAsState()
     val nameplateFontStyle by viewModel.nameplateFontStyle.collectAsState()
     val movedStudents by viewModel.movedStudents.collectAsState()
+    val tmsSyncState by viewModel.tmsSyncState.collectAsState()
     val movedOutOfCurrent = movedStudents.filter { it.originalClassCode == selectedClassCode }
 
     var showNameplateDialog by remember { mutableStateOf(false) }
@@ -122,6 +139,38 @@ fun RollCallScreen(
     var deleteConfirmStudent by remember { mutableStateOf<com.jf.checkin.data.model.Student?>(null) }
     var moveStudent by remember { mutableStateOf<com.jf.checkin.data.model.Student?>(null) }
     var showResetAllDialog by remember { mutableStateOf(false) }
+
+    // Android 8/9 保存相册/下载目录仍需 WRITE_EXTERNAL_STORAGE，按需申请后继续原操作
+    var pendingStorageAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val storagePermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            pendingStorageAction?.invoke()
+        } else {
+            Toast.makeText(
+                context,
+                "未授予存储权限，无法保存到相册或下载目录",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+        pendingStorageAction = null
+    }
+
+    fun runWithStoragePermission(action: () -> Unit) {
+        val needsPermission = Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE
+            ) != PackageManager.PERMISSION_GRANTED
+
+        if (needsPermission) {
+            pendingStorageAction = action
+            storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        } else {
+            action()
+        }
+    }
 
     LaunchedEffect(Unit) {
         viewModel.reloadSettings()
@@ -151,7 +200,9 @@ fun RollCallScreen(
                     Text(
                         text = "班级点名签到",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp
+                        fontSize = 18.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     if (currentClassInfo != null && currentClassInfo.classTime.isNotBlank()) {
                         val teacherText = if (teacherName.isNotBlank()) " | 教师: $teacherName" else " | 教师: 点击设置"
@@ -177,6 +228,14 @@ fun RollCallScreen(
                     Icon(
                         imageVector = Icons.Default.Schedule,
                         contentDescription = "根据当前时间自动匹配班级",
+                        tint = PrimaryBlue
+                    )
+                }
+                // 校管家自动考勤：先预览，确认后才提交
+                IconButton(onClick = { viewModel.startTmsSync(LocalDate.now()) }) {
+                    Icon(
+                        imageVector = Icons.Default.CloudUpload,
+                        contentDescription = "自动同步校管家考勤",
                         tint = PrimaryBlue
                     )
                 }
@@ -243,10 +302,15 @@ fun RollCallScreen(
                         onToggleAllPresent = { viewModel.toggleAllPresent() },
                         onReset = { viewModel.resetCurrentClass() },
                         onResetAll = { showResetAllDialog = true },
-                        onDownloadImage = { triggerExportWithTeacherCheck { viewModel.downloadAndSaveImage(context) } },
+                        onDownloadImage = {
+                            triggerExportWithTeacherCheck {
+                                runWithStoragePermission { viewModel.downloadAndSaveImage(context) }
+                            }
+                        },
                         onExportAndShare = { triggerExportWithTeacherCheck { viewModel.exportAndShare(context) } },
                         onShowNameplateDialog = { showNameplateDialog = true },
                         onShowAddStudentDialog = { showAddStudentDialog = true },
+                        onStartTmsSync = { viewModel.startTmsSync(LocalDate.now()) },
                         onMoveClass = { student -> moveStudent = student },
                         movedOutStudents = movedOutOfCurrent,
                         onReturnStudent = { student ->
@@ -280,10 +344,15 @@ fun RollCallScreen(
                         onToggleAllPresent = { viewModel.toggleAllPresent() },
                         onReset = { viewModel.resetCurrentClass() },
                         onResetAll = { showResetAllDialog = true },
-                        onDownloadImage = { triggerExportWithTeacherCheck { viewModel.downloadAndSaveImage(context) } },
+                        onDownloadImage = {
+                            triggerExportWithTeacherCheck {
+                                runWithStoragePermission { viewModel.downloadAndSaveImage(context) }
+                            }
+                        },
                         onExportAndShare = { triggerExportWithTeacherCheck { viewModel.exportAndShare(context) } },
                         onShowNameplateDialog = { showNameplateDialog = true },
                         onShowAddStudentDialog = { showAddStudentDialog = true },
+                        onStartTmsSync = { viewModel.startTmsSync(LocalDate.now()) },
                         onMoveClass = { student -> moveStudent = student },
                         movedOutStudents = movedOutOfCurrent,
                         onReturnStudent = { student ->
@@ -322,6 +391,18 @@ fun RollCallScreen(
             }
         )
     }
+
+    // 校管家自动考勤：加载 / 预览 / 提交结果 / 错误
+    TmsSyncDialogs(
+        state = tmsSyncState,
+        onDismiss = { viewModel.clearTmsSyncState() },
+        onReload = { date -> viewModel.startTmsSync(date) },
+        onConfirm = { viewModel.submitTmsSync() },
+        onNavigateToSettings = {
+            viewModel.clearTmsSyncState()
+            onNavigateToSettings()
+        }
+    )
 
     // 席卡 PDF 导出与局域网直连打印弹窗
     if (showNameplateDialog) {
@@ -726,7 +807,7 @@ fun RollCallScreen(
                                 }
                                 FilledTonalButton(
                                     onClick = {
-                                        viewModel.downloadNameplatePdf(context)
+                                        runWithStoragePermission { viewModel.downloadNameplatePdf(context) }
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
@@ -748,7 +829,7 @@ fun RollCallScreen(
                                 }
                                 FilledTonalButton(
                                     onClick = {
-                                        viewModel.downloadNameplatePdf(context)
+                                        runWithStoragePermission { viewModel.downloadNameplatePdf(context) }
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
@@ -767,7 +848,7 @@ fun RollCallScreen(
                 ) {
                     OutlinedButton(
                         onClick = {
-                            viewModel.downloadNameplatePdf(context)
+                            runWithStoragePermission { viewModel.downloadNameplatePdf(context) }
                         },
                         modifier = Modifier.weight(1f)
                     ) {
@@ -1081,6 +1162,417 @@ fun RollCallScreen(
     }
 }
 
+@Composable
+private fun TmsSyncDialogs(
+    state: TmsSyncState,
+    onDismiss: () -> Unit,
+    onReload: (LocalDate) -> Unit,
+    onConfirm: () -> Unit,
+    onNavigateToSettings: () -> Unit
+) {
+    when (state) {
+        TmsSyncState.Idle -> Unit
+        TmsSyncState.Loading -> TmsBusyDialog(
+            title = "正在连接校管家",
+            message = "正在登录并匹配当天课程，请稍候…"
+        )
+        TmsSyncState.Submitting -> TmsBusyDialog(
+            title = "正在提交考勤",
+            message = "正在把点名结果写入校管家，请勿关闭应用…"
+        )
+        is TmsSyncState.Preview -> TmsPreviewDialog(
+            preview = state.preview,
+            onDismiss = onDismiss,
+            onReload = onReload,
+            onConfirm = onConfirm
+        )
+        is TmsSyncState.Success -> TmsSuccessDialog(
+            results = state.results,
+            onDismiss = onDismiss
+        )
+        is TmsSyncState.Error -> TmsErrorDialog(
+            state = state,
+            onDismiss = onDismiss,
+            onNavigateToSettings = onNavigateToSettings
+        )
+    }
+}
+
+@Composable
+private fun TmsBusyDialog(title: String, message: String) {
+    AlertDialog(
+        onDismissRequest = {},
+        title = { Text(title, fontWeight = FontWeight.Bold) },
+        text = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(26.dp),
+                    strokeWidth = 3.dp
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(message, fontSize = 14.sp)
+            }
+        },
+        confirmButton = {}
+    )
+}
+
+@Composable
+private fun TmsPreviewDialog(
+    preview: TmsSyncPreview,
+    onDismiss: () -> Unit,
+    onReload: (LocalDate) -> Unit,
+    onConfirm: () -> Unit
+) {
+    val context = LocalContext.current
+    var dateInput by remember(preview.date) { mutableStateOf(preview.date) }
+    val dateChanged = dateInput.trim() != preview.date
+    val reload = {
+        val parsed = runCatching { LocalDate.parse(dateInput.trim()) }.getOrNull()
+        if (parsed == null) {
+            Toast.makeText(
+                context,
+                "日期格式应为 yyyy-MM-dd",
+                Toast.LENGTH_SHORT
+            ).show()
+        } else {
+            onReload(parsed)
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("校管家考勤同步预览", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 460.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = dateInput,
+                        onValueChange = { dateInput = it },
+                        label = { Text("同步日期") },
+                        placeholder = { Text("yyyy-MM-dd") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    TextButton(onClick = reload) {
+                        Text("重新匹配")
+                    }
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "默认同步今天；补课或跨天点名可修改日期后重新匹配。",
+                    fontSize = 12.sp,
+                    color = Color(0xFF64748B)
+                )
+                if (dateChanged) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "日期已修改，请先点「重新匹配」，否则确认按钮不会提交。",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFFB45309)
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (preview.plans.isEmpty()) {
+                    Text(
+                        text = "没有找到可同步的课程（α1/β1/β2/β3）。",
+                        fontSize = 13.sp,
+                        color = Color(0xFFB45309)
+                    )
+                }
+                preview.plans.forEach { plan ->
+                    TmsPlanCard(plan)
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+
+                if (preview.warnings.isNotEmpty()) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFFFFFBEB),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            Color(0xFFFCD34D)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                text = "需要注意",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = Color(0xFF92400E)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            preview.warnings.forEach { warning ->
+                                Text(
+                                    text = "• $warning",
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF92400E)
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+
+                Text(
+                    text = "规则：α1/β1/β2/β3 均会同步；所有已匹配学员（含未到、请假）统一按出勤提交并计费；已点名课程自动跳过；不会发送微信/短信通知。",
+                    fontSize = 12.sp,
+                    color = Color(0xFF64748B)
+                )
+            }
+        },
+        confirmButton = {
+            when {
+                dateChanged -> {
+                    Button(
+                        onClick = reload,
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                    ) {
+                        Text("按新日期重新匹配")
+                    }
+                }
+                preview.canSubmit -> {
+                    Button(
+                        onClick = onConfirm,
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                    ) {
+                        Icon(
+                            Icons.Default.CloudUpload,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("确认同步 (${preview.submittableCount})", fontWeight = FontWeight.Bold)
+                    }
+                }
+                else -> {
+                    Button(onClick = onDismiss) {
+                        Text("关闭")
+                    }
+                }
+            }
+        },
+        dismissButton = if (preview.canSubmit || dateChanged) {
+            {
+                OutlinedButton(onClick = onDismiss) {
+                    Text("取消")
+                }
+            }
+        } else {
+            null
+        }
+    )
+}
+
+@Composable
+private fun TmsPlanCard(plan: TmsCoursePlan) {
+    val canSubmit = plan.canSubmit
+    val cardColor = when {
+        canSubmit -> Color(0xFFF0FDF4)
+        plan.alreadyPointed -> Color(0xFFF8FAFC)
+        else -> Color(0xFFFFFBEB)
+    }
+    val borderColor = when {
+        canSubmit -> Color(0xFF86EFAC)
+        plan.alreadyPointed -> Color(0xFFE2E8F0)
+        else -> Color(0xFFFCD34D)
+    }
+
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = cardColor,
+        border = androidx.compose.foundation.BorderStroke(1.dp, borderColor),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = plan.className,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = Color(0xFF1E293B),
+                    modifier = Modifier.weight(1f)
+                )
+                if (plan.displayTime.isNotBlank()) {
+                    Text(
+                        text = plan.displayTime,
+                        fontSize = 12.sp,
+                        color = Color(0xFF64748B)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+
+            val message = plan.message
+            if (message != null) {
+                Text(
+                    text = message,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = if (plan.alreadyPointed) Color(0xFF64748B) else Color(0xFFB45309)
+                )
+            } else {
+                Text(
+                    text = "已匹配 ${plan.matches.size} 人：本地已到 ${plan.presentCount}（含迟到 ${plan.lateCount}） / 请假 ${plan.leaveCount} / 未到 ${plan.absentCount}",
+                    fontSize = 12.sp,
+                    color = Color(0xFF334155)
+                )
+                Text(
+                    text = "提交时全部按出勤并计费",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFF15803D)
+                )
+                if (plan.unmatchedAppStudents.isNotEmpty()) {
+                    Text(
+                        text = "未匹配、不会提交：${plan.unmatchedAppStudents.joinToString("、") { it.name }}",
+                        fontSize = 11.sp,
+                        color = Color(0xFFB45309)
+                    )
+                }
+                if (plan.tmsOnlyStudentNames.isNotEmpty()) {
+                    Text(
+                        text = "校管家多出 ${plan.tmsOnlyStudentNames.size} 人，将保持原状态。",
+                        fontSize = 11.sp,
+                        color = Color(0xFF64748B)
+                    )
+                }
+                Text(
+                    text = "每人课消：${formatTmsCost(plan.costAmount, plan.unitCode)}",
+                    fontSize = 11.sp,
+                    color = Color(0xFF64748B)
+                )
+            }
+        }
+    }
+}
+
+private fun formatTmsCost(cost: Double, unitCode: Int): String {
+    val value = if (unitCode == 1) cost / 60.0 else cost
+    val text = if (value % 1.0 == 0.0) {
+        value.toInt().toString()
+    } else {
+        String.format(Locale.ROOT, "%.2f", value)
+    }
+    val unit = when (unitCode) {
+        1 -> "小时"
+        2 -> "次"
+        3 -> "天"
+        else -> ""
+    }
+    return if (unit.isBlank()) text else "$text $unit"
+}
+
+@Composable
+private fun TmsSuccessDialog(
+    results: List<TmsCourseResult>,
+    onDismiss: () -> Unit
+) {
+    val successCount = results.count { it.success }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = when {
+                    results.isNotEmpty() && successCount == results.size -> "校管家考勤已同步"
+                    successCount > 0 -> "部分课程同步成功"
+                    else -> "同步未完成"
+                },
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 360.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                if (results.isEmpty()) {
+                    Text("没有可提交的课程。", fontSize = 13.sp)
+                }
+                results.forEach { result ->
+                    Text(
+                        text = "${if (result.success) "成功" else "失败"}：${result.className}",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                        color = if (result.success) Color(0xFF15803D) else Color(0xFFB91C1C)
+                    )
+                    Text(
+                        text = result.message,
+                        fontSize = 12.sp,
+                        color = Color(0xFF475569)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                if (successCount > 0) {
+                    Text(
+                        text = "建议再到校管家网页核对一次点名结果。",
+                        fontSize = 12.sp,
+                        color = Color(0xFF64748B)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss) {
+                Text("完成")
+            }
+        }
+    )
+}
+
+@Composable
+private fun TmsErrorDialog(
+    state: TmsSyncState.Error,
+    onDismiss: () -> Unit,
+    onNavigateToSettings: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("无法同步校管家", fontWeight = FontWeight.Bold) },
+        text = {
+            Text(
+                text = state.message,
+                fontSize = 14.sp,
+                color = Color(0xFF334155)
+            )
+        },
+        confirmButton = {
+            if (state.needsSettings) {
+                Button(
+                    onClick = onNavigateToSettings,
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                ) {
+                    Text("去设置")
+                }
+            } else {
+                Button(onClick = onDismiss) {
+                    Text("知道了")
+                }
+            }
+        },
+        dismissButton = if (state.needsSettings) {
+            {
+                OutlinedButton(onClick = onDismiss) {
+                    Text("取消")
+                }
+            }
+        } else {
+            null
+        }
+    )
+}
+
 /**
  * 平板横屏布局 (左侧班级与概览，右侧大网格点名)
  */
@@ -1106,6 +1598,7 @@ private fun TabletLandscapeLayout(
     onExportAndShare: () -> Unit,
     onShowNameplateDialog: () -> Unit,
     onShowAddStudentDialog: () -> Unit,
+    onStartTmsSync: () -> Unit,
     onMoveClass: (com.jf.checkin.data.model.Student) -> Unit,
     movedOutStudents: List<com.jf.checkin.data.model.Student>,
     onReturnStudent: (com.jf.checkin.data.model.Student) -> Unit
@@ -1280,6 +1773,14 @@ private fun TabletLandscapeLayout(
                                 enabled = !isExporting
                             )
                             DropdownMenuItem(
+                                text = { Text("自动同步校管家考勤") },
+                                leadingIcon = { Icon(Icons.Default.CloudUpload, contentDescription = null, tint = PrimaryBlue) },
+                                onClick = {
+                                    showMoreMenu = false
+                                    onStartTmsSync()
+                                }
+                            )
+                            DropdownMenuItem(
                                 text = { Text("重置本班签到") },
                                 leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null, tint = Color(0xFFF59E0B)) },
                                 onClick = {
@@ -1373,6 +1874,7 @@ private fun PhonePortraitLayout(
     onExportAndShare: () -> Unit,
     onShowNameplateDialog: () -> Unit,
     onShowAddStudentDialog: () -> Unit,
+    onStartTmsSync: () -> Unit,
     onMoveClass: (com.jf.checkin.data.model.Student) -> Unit,
     movedOutStudents: List<com.jf.checkin.data.model.Student>,
     onReturnStudent: (com.jf.checkin.data.model.Student) -> Unit
@@ -1512,6 +2014,14 @@ private fun PhonePortraitLayout(
                                 onShowNameplateDialog()
                             },
                             enabled = !isExporting
+                        )
+                        DropdownMenuItem(
+                            text = { Text("自动同步校管家考勤") },
+                            leadingIcon = { Icon(Icons.Default.CloudUpload, contentDescription = null, tint = PrimaryBlue) },
+                            onClick = {
+                                showMoreMenu = false
+                                onStartTmsSync()
+                            }
                         )
                         DropdownMenuItem(
                             text = { Text("重置本班签到") },
@@ -1662,7 +2172,7 @@ private fun OnlineStudentsNotice(
             }
             Spacer(modifier = Modifier.height(4.dp))
             val itemsText = students.joinToString("、") { student ->
-                val tag = if (student.classFormat in StudentCsvParser.OFFLINE_FORMATS) "转线上" else "线上"
+                val tag = if (StudentCsvParser.isOfflineStudent(student)) "转线上" else "线上"
                 "${student.name} [${tag}]"
             }
             Text(

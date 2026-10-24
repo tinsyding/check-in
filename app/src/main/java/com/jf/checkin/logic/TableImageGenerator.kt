@@ -176,7 +176,7 @@ object TableImageGenerator {
                         statusColor = Color.parseColor("#3B82F6") // 科技蓝
                     }
                     AttendanceStatus.ONLINE -> {
-                        statusText = if (student.classFormat in StudentCsvParser.OFFLINE_FORMATS) "转线上" else "线上"
+                        statusText = if (StudentCsvParser.isOfflineStudent(student)) "转线上" else "线上"
                         statusColor = Color.parseColor("#8B5CF6") // 优雅紫
                     }
                     AttendanceStatus.UNCHECKED -> {
@@ -244,16 +244,22 @@ object TableImageGenerator {
         classCode: String,
         classTime: String,
         teacherName: String,
-        students: List<Student>
+        students: List<Student>,
+        bitmap: Bitmap? = null
     ): File {
-        val bitmap = createTableBitmap(classCode, classTime, teacherName, students)
-        val exportDir = File(context.cacheDir, "attendance_exports").apply { mkdirs() }
-        val filename = "checkin_${classCode}_${System.currentTimeMillis()}.png"
-        val file = File(exportDir, filename)
-        FileOutputStream(file).use { out ->
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+        val targetBitmap = bitmap ?: createTableBitmap(classCode, classTime, teacherName, students)
+        try {
+            val exportDir = File(context.cacheDir, "attendance_exports").apply { mkdirs() }
+            val filename = "checkin_${classCode}_${System.currentTimeMillis()}.png"
+            val file = File(exportDir, filename)
+            FileOutputStream(file).use { out ->
+                targetBitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+            }
+            return file
+        } finally {
+            // 仅回收本函数内部创建的 Bitmap，外部传入的由调用方负责回收
+            if (bitmap == null) targetBitmap.recycle()
         }
-        return file
     }
 
     /**
@@ -264,34 +270,56 @@ object TableImageGenerator {
         classCode: String,
         classTime: String,
         teacherName: String,
-        students: List<Student>
+        students: List<Student>,
+        bitmap: Bitmap? = null
     ): Boolean {
-        val bitmap = createTableBitmap(classCode, classTime, teacherName, students)
-        val filename = "签到表_${classCode}_${System.currentTimeMillis()}.png"
+        val targetBitmap = bitmap ?: createTableBitmap(classCode, classTime, teacherName, students)
+        try {
+            val filename = "签到表_${classCode}_${System.currentTimeMillis()}.png"
+            val resolver = context.contentResolver
 
-        val values = ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, filename)
-            put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+            // Android 8/9：直接写入公共 Pictures 目录，再插入 MediaStore 供相册索引
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                val targetDir = File(
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                    "班级签到表"
+                ).apply { mkdirs() }
+                val targetFile = File(targetDir, filename)
+                FileOutputStream(targetFile).use { out ->
+                    targetBitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                }
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+                    put(MediaStore.MediaColumns.MIME_TYPE, "image/png")
+                    put(MediaStore.MediaColumns.DATA, targetFile.absolutePath)
+                }
+                resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                return true
+            }
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/班级签到表")
-                put(MediaStore.Images.Media.IS_PENDING, 1)
-            }
-        }
+                val values = ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, filename)
+                    put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                    put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/班级签到表")
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
 
-        val resolver = context.contentResolver
-        val uri: Uri? = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-
-        if (uri != null) {
-            resolver.openOutputStream(uri)?.use { out ->
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                val uri: Uri? = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                if (uri != null) {
+                    resolver.openOutputStream(uri)?.use { out ->
+                        targetBitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                    }
+                    values.clear()
+                    values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                    resolver.update(uri, values, null, null)
+                    return true
+                }
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                values.clear()
-                values.put(MediaStore.Images.Media.IS_PENDING, 0)
-                resolver.update(uri, values, null, null)
-            }
-            return true
+            return false
+        } finally {
+            // 仅回收本函数内部创建的 Bitmap，外部传入的由调用方负责回收
+            if (bitmap == null) targetBitmap.recycle()
         }
-        return false
     }
 }

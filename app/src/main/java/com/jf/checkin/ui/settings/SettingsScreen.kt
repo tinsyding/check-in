@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
@@ -65,6 +66,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.jf.checkin.data.parser.StudentCsvParser
 import com.jf.checkin.data.repository.StudentRepository
 import com.jf.checkin.data.repository.UserPrefRepository
 import com.jf.checkin.ui.theme.PrimaryBlue
@@ -88,6 +90,10 @@ fun SettingsScreen(
     var username by remember { mutableStateOf(prefRepository.username) }
     var password by remember { mutableStateOf(prefRepository.password) }
     var showPassword by remember { mutableStateOf(false) }
+
+    var tmsUsername by remember { mutableStateOf(prefRepository.tmsUsername) }
+    var tmsPassword by remember { mutableStateOf(prefRepository.tmsPassword) }
+    var showTmsPassword by remember { mutableStateOf(false) }
 
     var printerProfiles by remember { mutableStateOf(prefRepository.getPrinterProfiles()) }
     var selectedPrinterId by remember {
@@ -115,9 +121,12 @@ fun SettingsScreen(
 
                     if (csvText.isNotBlank()) {
                         studentRepository.loadFromCsv(csvText)
+                        val imported = studentRepository.students.value
+                        val offlineCount = imported.count { StudentCsvParser.isOfflineStudent(it) }
+                        val onlineCount = imported.size - offlineCount
                         Toast.makeText(
                             context,
-                            "成功导入 ${studentRepository.students.value.size} 名线下需签到学生！",
+                            "成功导入 ${imported.size} 名学生（线下需签到 $offlineCount 人，线上免签 $onlineCount 人）！",
                             Toast.LENGTH_LONG
                         ).show()
                     } else {
@@ -252,6 +261,92 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("保存账号密码")
                     }
+                }
+            }
+
+            // 1.2 校管家（TMS）自动考勤账密
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.CloudUpload,
+                            contentDescription = null,
+                            tint = PrimaryBlue,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "校管家（TMS）自动考勤",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF1E293B)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "用于点名后同步到 tms.xiaogj.com。支持 α1/β1/β2/β3 班级；所有已匹配学员（含未到、请假）统一按出勤并计费；提交前会显示预览，确认后才写入。账号密码只保存在本机。",
+                        fontSize = 13.sp,
+                        color = Color(0xFF64748B)
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    OutlinedTextField(
+                        value = tmsUsername,
+                        onValueChange = { tmsUsername = it },
+                        label = { Text("校管家账号 / 邮箱") },
+                        leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedTextField(
+                        value = tmsPassword,
+                        onValueChange = { tmsPassword = it },
+                        label = { Text("校管家密码") },
+                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                        trailingIcon = {
+                            IconButton(onClick = { showTmsPassword = !showTmsPassword }) {
+                                Icon(
+                                    imageVector = if (showTmsPassword) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = null
+                                )
+                            }
+                        },
+                        visualTransformation = if (showTmsPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Button(
+                        onClick = {
+                            prefRepository.saveTmsCredentials(tmsUsername.trim(), tmsPassword)
+                            Toast.makeText(context, "校管家账密已保存在本地！", Toast.LENGTH_SHORT).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("保存校管家账密")
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "安全提示：校管家官方登录跳转会在 URL 中携带密码，应用已强制使用 HTTPS；请勿在公共 Wi-Fi 下使用。更换密码后请回到这里重新保存。",
+                        fontSize = 11.sp,
+                        color = Color(0xFF94A3B8)
+                    )
                 }
             }
 
@@ -528,11 +623,12 @@ fun SettingsScreen(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "• 过滤规则：α1 与 β1 形式为线上课程，系统自动忽略不予录入；仅 β2 和 β3 为线下需要签到。\n" +
+                        text = "• 人员范围：α1 与 β1 形式为线上课程，系统仍会录入名单并标记为「线上 · 免签」；β2 与 β3 形式为线下课程，需要签到。四种班型都会同步到校管家。手动调入学生按线下人员处理。\n" +
                                 "• 点名操作：单点卡片直接打勾（√ 已到），长按卡片可快速切换为「迟到」、「请假」、「未到」。\n" +
                                 "• 手动加人：点名页「加人」可把其他老师班调入的学生加入当前班级，可填备注（如原班来源），重导名单不丢失；长按卡片可改备注、调到其他班，调入学生可删除。\n" +
                                 "• 临时调班：长按卡片「调到其他班」只是临时调动，原班顶部会显示调到哪去了并可一键调回，接收班卡片会标注原班来源；大批量调班请重新导入名单文件。\n" +
                                 "• 自动匹配：课前 20 分钟 ～ 课后 30 分钟内，应用将自动为您切换锁定对应班级。\n" +
+                                "• 自动考勤：点名页顶部云上传图标或「更多」中可打开校管家同步。应用按「班级号+班型」匹配 α1/β1/β2/β3 当天课程，先显示已到/迟到/请假/未到预览，确认后才提交；所有已匹配学员（含未到、请假）统一按出勤并计费；已点名课程自动跳过，不发送微信/短信通知。\n" +
                                 "• 发送分享：导出时离线生成高清签到长图，直接调起安卓系统的“发送给”（支持微信、QQ等）。",
                         fontSize = 13.sp,
                         lineHeight = 20.sp,

@@ -220,35 +220,47 @@ object NameplatePdfGenerator {
         val document = buildPdfDocument(context, classCode, students, onlyFirstStudent, fontStyle)
         val prefix = if (onlyFirstStudent) "席卡测试单页" else "席卡"
         val filename = "${prefix}_${classCode}_${System.currentTimeMillis()}.pdf"
+        val resolver = context.contentResolver
 
-        val values = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
-            put(MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        // Android 8/9：直接写入公共 Downloads 目录，再插入 MediaStore 供文件管理器索引
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            val targetDir = File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                "班级席卡"
+            ).apply { mkdirs() }
+            val targetFile = File(targetDir, filename)
+            FileOutputStream(targetFile).use { out ->
+                document.writeTo(out)
+            }
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+                put(MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
+                put(MediaStore.MediaColumns.DATA, targetFile.absolutePath)
+            }
+            resolver.insert(MediaStore.Files.getContentUri("external"), values)
+            document.close()
+            return true
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+                put(MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
                 put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/班级席卡")
                 put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
-        }
 
-        val resolver = context.contentResolver
-        val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            MediaStore.Downloads.EXTERNAL_CONTENT_URI
-        } else {
-            MediaStore.Files.getContentUri("external")
-        }
-
-        val uri: Uri? = resolver.insert(collection, values)
-        if (uri != null) {
-            resolver.openOutputStream(uri)?.use { out ->
-                document.writeTo(out)
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val uri: Uri? = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            if (uri != null) {
+                resolver.openOutputStream(uri)?.use { out ->
+                    document.writeTo(out)
+                }
                 values.clear()
                 values.put(MediaStore.MediaColumns.IS_PENDING, 0)
                 resolver.update(uri, values, null, null)
+                document.close()
+                return true
             }
-            document.close()
-            return true
         }
         document.close()
         return false
