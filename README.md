@@ -1,79 +1,56 @@
-# 班级点名签到 (Check-in) 📱
+# 极方考勤点名工具
 
-[![Android Release](https://github.com/tinsyding/check-in/actions/workflows/android-release.yml/badge.svg)](https://github.com/tinsyding/check-in/actions/workflows/android-release.yml)
-[![Latest Release](https://img.shields.io/github/v/release/tinsyding/check-in?color=blue&label=release)](https://github.com/tinsyding/check-in/releases)
-[![Platform](https://img.shields.io/badge/Platform-Android%208.0%2B-green.svg)](https://developer.android.com)
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-orange.svg)](https://kotlinlang.org)
-[![Compose](https://img.shields.io/badge/Jetpack%20Compose-BOM%202024.11.00-4285F4.svg)](https://developer.android.com/jetpack/compose)
+极方考勤点名工具。支持学生名单导入、课表时间匹配、一键全到/补录、席卡 PDF 生成与局域网打印、考勤长图导出及校管家考勤同步。
 
-现代、高效、轻量级的 Android 课堂与培训签到管理工具。支持学生名单智能匹配、一键全到/补录、席卡 PDF 生成与局域网网络打印、考勤长图分享、以及内置教务系统网页下载名单等丰富功能。
+## 功能介绍
 
----
+### 考勤点名
+- 网格卡片展示学号、姓名与考勤状态（未到/已到/缺勤/迟到/请假）。
+- 支持一键全到与点按快速切换考勤状态。
+- 根据当前星期与上下课时间段，自动匹配并推荐当前上课班级。
+- 支持手动加人、临时调班、调出学生一键调回及备注修改。
+- 点名状态即时保存至本地，退出应用或切换页面不丢失。
+- 支持重置当前班级或全校考勤状态。
 
-## 🌟 核心功能特性
+### 考勤长图与历史快照
+- 基于原生 Canvas 渲染班级考勤汇总长图（包含统计数据与人员明细）。
+- 支持保存到系统相册及通过微信等应用分享。
+- 导出长图时自动生成历史快照，可在历史记录中查看长图并一键恢复指定快照。
+- 分享长图后提示是否同步当前班级考勤至校管家（当天已同步班型不重复提示）。
 
-### 1. 📋 智能考勤点名
-- **班级学生卡片网格**：直观展示学生学号、姓名与考勤状态（未到/已到/缺勤/迟到/请假）。
-- **一键全到 / 快速切换**：支持“全到/取消全到”快速切换，单指点按快速标记考勤。
-- **课表时间智能匹配**：根据当前星期与上下课时间段，自动匹配并推荐当前上课班级。
-- **人员动态调度**：支持手动加人、临时调班、调出学生一键调回、修改学生备注等。
-- **考勤状态持久化**：点名状态即时保存至本地（SharedPreferences），退出应用或切换页面不丢失。
-- **全校状态一键清空**：支持全校或当前班级考勤重置，便于每日点名重开。
+### 名单导入与内置浏览器
+- 内置浏览器，支持直接在应用内登录教务后台并下载解析学生名单 CSV。
+- 支持从本地导入标准格式的 CSV 学生名单（含班级、学号、姓名、上课时间等）。
 
-### 2. 🪪 A4 席卡生成与局域网网络打印
-- **A4 折叠席卡 PDF**：自动按学生名单排版折叠立牌席卡，内置大字书法毛笔字体（`cursive.ttf`）。
-- **局域网直接打印**：支持 **FTP** 及 **LPR (Line Printer Remote / 515端口)** 协议直接向局域网激光/网络打印机发送 PDF 打印任务，免除驱动烦恼。
-- **系统打印与分享**：可直接调起 Android 打印服务或通过微信/邮件分享席卡 PDF 文件。
+### 校管家考勤同步
+- 点击点名页顶部同步按钮，自动登录校管家并匹配当日课程。
+- 提交前提供预览弹窗，核对出勤统计、未匹配学员与课消金额。
+- 支持按「班级号+班型」匹配 α1/β1/β2/β3 课程（含线上课）。
+- 匹配学员统一按出勤计费提交，自动跳过已点名课程，不触发微信/短信通知。
+- 支持每日 18:00 本地定时检查（基于 WorkManager），未完成同步的班级会通过系统通知提醒，无需外部推送服务。
 
-### 3. 📊 考勤汇总长图导出与分享
-- **考勤长图自动渲染**：基于原生 Canvas 高清渲染当前班级考勤汇总表（包含应到、实到、缺勤、迟到、请假统计与人员明细）。
-- **一键存相册与分享**：一键保存到系统相册，或通过微信/企业微信一键分享点名报告。
-- **分享后询问同步**：分享签到长图后会询问是否把当前班考勤同步到校管家；当天已同步过的班型不会重复提示。
+## 技术栈
 
-### 4. 📜 历史记录与快照状态还原
-- **考勤归档**：每次导出长图自动记录历史档案。
-- **快照一键恢复**：在历史记录中可“一键恢复”指定时刻的签到快照回主界面，支持查看历史长图与记录管理。
-
-### 5. 🌐 内置教务浏览器与名单导入
-- **内置 Web 浏览器**：支持在应用内直接登录教务/培训后台系统，一键下载并自动解析学生名单 CSV。
-- **本地 CSV 灵活导入**：支持标准 CSV 格式导入学生名单（包含班级代号、学号、姓名、星期与时间等）。
-
-### 6. ☁️ 校管家（TMS）自动考勤
-- **点名后一键同步**：点击点名页顶部云上传图标，自动登录校管家并匹配当天课程。
-- **提交前安全预览**：展示已到/迟到/请假/未到人数、未匹配学员与课消金额，确认后才写入校管家。
-- **四种班型都同步**：按「班级号+班型」匹配 α1/β1/β2/β3 当天课程；线上课也会提交，不再跳过。
-- **全部按出勤计费**：已匹配学员无论本地是已到、迟到、请假还是未到，都会按出勤提交并计费；跳过已点名课程，不发送微信/短信通知。
-- **每天 18:00 本地提醒**：使用 WorkManager 在手机本地检查今天课表；如果还有班级没有成功同步记录，会通过通知栏提醒。无需注册 FCM 或任何远程推送服务；Android 13+ 需要允许通知权限。
-
----
-
-## 🛠️ 技术架构与选型
-
-本项目基于现代 Android 架构设计规范构建：
-
-- **编程语言**：100% [Kotlin](https://kotlinlang.org/)
-- **UI 框架**：[Jetpack Compose](https://developer.android.com/jetpack/compose) + Material Design 3 (M3)
-- **架构模式**：MVVM (Model-View-ViewModel) + 单向数据流 (UDF)
+- **开发语言**：[Kotlin](https://kotlinlang.org/)
+- **UI 框架**：[Jetpack Compose](https://developer.android.com/jetpack/compose) + Material 3
+- **架构模式**：MVVM + 单向数据流 (UDF)
 - **导航组件**：[Navigation Compose](https://developer.android.com/jetpack/compose/navigation)
-- **数据存储**：SharedPreferences 轻量持久化（含教务系统与校管家账密、每日同步记录）+ JSON 文件归档历史记录
-- **校管家同步**：基于 `HttpURLConnection` + `org.json` 的 HTTPS API 客户端，无需 WebView 即可完成登录、课程匹配与考勤提交
-- **每日提醒**：WorkManager 周期任务 + 本地通知渠道，不依赖服务器或远程推送
-- **图形与文档生成**：
-  - `android.graphics.pdf.PdfDocument` 生成矢量席卡
-  - `android.graphics.Canvas` 高清长图绘制
-- **网络协议**：基于标准 Socket 实现网络打印机 LPR (RFC 1179) 与 FTP 协议
-- **构建管理**：Gradle Version Catalog (`libs.versions.toml`) + Kotlin DSL (`build.gradle.kts`)
-- **CI/CD 流水线**：GitHub Actions 全自动化构建、版本递增、APK 签名与 GitHub Release 发布
+- **本地存储**：SharedPreferences（配置与临时状态）+ JSON 文件（历史记录归档）
+- **后台任务**：WorkManager（每日同步提醒）
+- **PDF 与长图**：`android.graphics.pdf.PdfDocument` / `android.graphics.Canvas`
+- **网络与同步**：
+  - 原生 Socket 实现 LPR (RFC 1179) 及 FTP 打印协议
+  - 原生 HTTPS 客户端对接校管家 API
+- **构建系统**：Gradle Version Catalog (`libs.versions.toml`) + Kotlin DSL
+- **CI/CD**：GitHub Actions 自动构建与 Release 发布
 
----
-
-## 📁 项目目录结构
+## 目录结构
 
 ```text
 check-in/
 ├── .github/
 │   └── workflows/
-│       └── android-release.yml   # GitHub Actions 自动化构建与发布工作流
+│       └── android-release.yml   # GitHub Actions 构建与发布工作流
 ├── app/
 │   ├── src/
 │   │   └── main/
@@ -83,69 +60,53 @@ check-in/
 │   │       │   ├── data/
 │   │       │   │   ├── model/               # 数据实体 (Student, AttendanceRecord 等)
 │   │       │   │   ├── parser/              # CSV 学生名单解析器
-│   │       │   │   ├── remote/              # 校管家 (TMS) 登录、课程匹配与考勤同步客户端
-│   │       │   │   └── repository/          # 数据仓库 (SharedPreferences/JSON 存储与学生管理)
-│   │       │   ├── logic/                   # 业务逻辑 (PDF生成, 长图生成, 网络打印, 时间匹配)
+│   │       │   │   ├── remote/              # 校管家 (TMS) API 客户端
+│   │       │   │   └── repository/          # 数据仓库 (本地存储与学生管理)
+│   │       │   ├── logic/                   # 业务逻辑 (PDF 生成、长图绘制、网络打印、时间匹配)
 │   │       │   └── ui/
 │   │       │       ├── MainActivity.kt      # 宿主 Activity 与导航入口
-│   │       │       ├── rollcall/            # 点名主界面 (RollCallScreen, ViewModel, StudentCard)
-│   │       │       ├── history/             # 点名历史界面 (HistoryScreen)
-│   │       │       ├── webview/             # 内置浏览器界面 (JfBrowserScreen)
-│   │       │       ├── settings/            # 设置与导入界面 (SettingsScreen)
-│   │       │       └── theme/               # Material3 主题与配色
+│   │       │       ├── rollcall/            # 点名主界面
+│   │       │       ├── history/             # 历史记录界面
+│   │       │       ├── webview/             # 内置浏览器界面
+│   │       │       ├── settings/            # 设置与导入界面
+│   │       │       └── theme/               # Material 3 主题配置
 │   │       └── AndroidManifest.xml
 │   └── build.gradle.kts          # App 模块配置与依赖
 ├── gradle/
 │   └── libs.versions.toml        # 统一版本依赖清单
 ├── build.gradle.kts              # 根工程构建脚本
-└── settings.gradle.kts           # 模块与仓库源配置
+└── settings.gradle.kts           # 模块与仓库配置
 ```
 
----
-
-## 🚀 快速上手与本地构建
+## 本地构建
 
 ### 环境要求
-- **Android Studio**：Ladybug (2024.2.1) 或更高版本
-- **JDK**：OpenJDK 17
-- **Android SDK**：Compile SDK 35，Min SDK 26 (Android 8.0+)
 
-### 命令行编译
+- Android Studio Ladybug (2024.2.1) 或更高版本
+- JDK 17
+- Android SDK：Compile SDK 35，Min SDK 26 (Android 8.0+)
 
-1. **克隆代码仓库**：
-   ```bash
-   git clone git@github.com:tinsyding/check-in.git
-   cd check-in
-   ```
+### 编译命令
 
-2. **编译 Debug 版 APK**：
-   ```bash
-   ./gradlew assembleDebug
-   # 输出路径: app/build/outputs/apk/debug/app-debug.apk
-   ```
+```bash
+# 克隆仓库
+git clone git@github.com:tinsyding/check-in.git
+cd check-in
 
-3. **编译 Release 版 APK**：
-   ```bash
-   ./gradlew assembleRelease
-   # 输出路径: app/build/outputs/apk/release/app-release-unsigned.apk
-   ```
+# 编译 Debug APK (输出: app/build/outputs/apk/debug/app-debug.apk)
+./gradlew assembleDebug
 
-4. **直接安装到已连接设备**：
-   ```bash
-   ./gradlew installDebug
-   ```
+# 编译 Release APK (输出: app/build/outputs/apk/release/app-release-unsigned.apk)
+./gradlew assembleRelease
 
----
+# 安装到已连接设备
+./gradlew installDebug
+```
 
-## 📦 获取已发布安装包 (APK)
+## 下载与发布
 
-本项目通过 GitHub Actions 实现了持续集成与部署（CI/CD）：
-每次推送代码至 `main` 分支时，自动化工作流会自动生成构建产物并发布：
+可在 [Releases](https://github.com/tinsyding/check-in/releases) 页面下载最新构建的 APK 安装包。推送代码至 `main` 分支时会触发 GitHub Actions 自动打包发布。
 
-- 访问 [GitHub Releases 页面](https://github.com/tinsyding/check-in/releases) 即可直接下载最新版本的 APK 安装包。
+## 开源协议
 
----
-
-## 📄 开源与许可证
-
-本项目采用 [MIT License](LICENSE) 开源。
+本项目基于 [MIT License](LICENSE) 开源。
