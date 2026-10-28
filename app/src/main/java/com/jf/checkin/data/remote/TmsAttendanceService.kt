@@ -13,6 +13,7 @@ import java.net.URI
 import java.net.URLEncoder
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.zip.GZIPInputStream
@@ -88,6 +89,20 @@ data class TmsCoursePlan(
             message == null &&
             matches.isNotEmpty() &&
             costAmount > 0.0
+
+    /**
+     * 解析本节课的开始日期时间。
+     * 优先使用校管家 StartTime，若空则尝试本地课表 classTime。
+     */
+    fun getStartDateTime(date: LocalDate): LocalDateTime? {
+        val raw = TmsAttendanceMapper.tmsTime(startTime).ifBlank {
+            TmsAttendanceMapper.parseClassTime(classTime)?.start.orEmpty()
+        }
+        if (raw.isBlank()) return null
+        val normalized = TmsAttendanceMapper.normalizeTime(raw)
+        val localTime = runCatching { LocalTime.parse(normalized) }.getOrNull() ?: return null
+        return date.atTime(localTime)
+    }
 }
 
 data class TmsSyncPreview(
@@ -97,6 +112,18 @@ data class TmsSyncPreview(
 ) {
     val submittableCount: Int get() = plans.count { it.canSubmit }
     val canSubmit: Boolean get() = submittableCount > 0
+
+    /**
+     * 如果存在尚未开始的课程，返回最早的上课开始时间；
+     * 若所有可提交课程均已开始或已过上课时间，则返回 null（表示可立即提交）。
+     */
+    fun earliestFutureStartTime(now: LocalDateTime = LocalDateTime.now()): LocalDateTime? {
+        val dateParsed = runCatching { LocalDate.parse(date) }.getOrNull() ?: return null
+        return plans.filter { it.canSubmit }
+            .mapNotNull { it.getStartDateTime(dateParsed) }
+            .filter { it.isAfter(now) }
+            .minOrNull()
+    }
 }
 
 data class TmsCourseResult(

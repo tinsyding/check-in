@@ -17,6 +17,7 @@ class UserPrefRepository(context: Context) {
         private const val KEY_TMS_SYNCED_CLASSES = "jf_tms_synced_classes"
         private const val KEY_TMS_DAILY_REMINDER = "jf_tms_daily_reminder"
         private const val KEY_TMS_NOTIFICATION_ASKED = "jf_tms_notification_asked"
+        private const val KEY_TMS_SCHEDULED_SYNCS = "jf_tms_scheduled_syncs"
         private const val KEY_LAST_CSV_CONTENT = "jf_last_csv_content"
         private const val KEY_LAST_IMPORT_TIME = "jf_last_import_time"
         private const val KEY_TEACHER_NAME = "jf_teacher_name"
@@ -300,4 +301,79 @@ class UserPrefRepository(context: Context) {
         }
         prefs.edit().putString(KEY_ATTENDANCE_STATUSES, obj.toString()).apply()
     }
+
+    // ---- 校管家定时/后台等待考勤调度状态持久化 ----
+    fun saveScheduledTmsSync(sync: ScheduledTmsSync) {
+        val current = getAllScheduledTmsSyncs().filter { it.classCode != sync.classCode }.toMutableList()
+        current.add(sync)
+        saveAllScheduledTmsSyncs(current)
+    }
+
+    fun getScheduledTmsSync(classCode: String): ScheduledTmsSync? {
+        cleanExpiredScheduledTmsSyncs()
+        return getAllScheduledTmsSyncs().find { it.classCode == classCode }
+    }
+
+    fun getAllScheduledTmsSyncs(): List<ScheduledTmsSync> {
+        val jsonStr = prefs.getString(KEY_TMS_SCHEDULED_SYNCS, null) ?: return emptyList()
+        return try {
+            val array = org.json.JSONArray(jsonStr)
+            val list = mutableListOf<ScheduledTmsSync>()
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                list.add(
+                    ScheduledTmsSync(
+                        classCode = obj.optString("classCode"),
+                        date = obj.optString("date"),
+                        targetTime = obj.optString("targetTime"),
+                        targetEpochMillis = obj.optLong("targetEpochMillis"),
+                        createdAtEpochMillis = obj.optLong("createdAtEpochMillis", System.currentTimeMillis())
+                    )
+                )
+            }
+            list
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    fun removeScheduledTmsSync(classCode: String) {
+        val filtered = getAllScheduledTmsSyncs().filter { it.classCode != classCode }
+        saveAllScheduledTmsSyncs(filtered)
+    }
+
+    /** 清理过期超过 24 小时的预约记录 */
+    private fun cleanExpiredScheduledTmsSyncs() {
+        val now = System.currentTimeMillis()
+        val oneDayMillis = 24 * 60 * 60 * 1000L
+        val list = getAllScheduledTmsSyncs()
+        val valid = list.filter { now - it.targetEpochMillis < oneDayMillis }
+        if (valid.size != list.size) {
+            saveAllScheduledTmsSyncs(valid)
+        }
+    }
+
+    private fun saveAllScheduledTmsSyncs(list: List<ScheduledTmsSync>) {
+        val array = org.json.JSONArray()
+        for (item in list) {
+            array.put(
+                org.json.JSONObject().apply {
+                    put("classCode", item.classCode)
+                    put("date", item.date)
+                    put("targetTime", item.targetTime)
+                    put("targetEpochMillis", item.targetEpochMillis)
+                    put("createdAtEpochMillis", item.createdAtEpochMillis)
+                }
+            )
+        }
+        prefs.edit().putString(KEY_TMS_SCHEDULED_SYNCS, array.toString()).apply()
+    }
 }
+
+data class ScheduledTmsSync(
+    val classCode: String,
+    val date: String,
+    val targetTime: String,
+    val targetEpochMillis: Long,
+    val createdAtEpochMillis: Long = System.currentTimeMillis()
+)

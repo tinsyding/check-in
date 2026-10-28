@@ -127,6 +127,7 @@ fun RollCallScreen(
     val nameplateFontStyle by viewModel.nameplateFontStyle.collectAsState()
     val movedStudents by viewModel.movedStudents.collectAsState()
     val tmsSyncState by viewModel.tmsSyncState.collectAsState()
+    val scheduledSync by viewModel.scheduledSync.collectAsState()
     val movedOutOfCurrent = movedStudents.filter { it.originalClassCode == selectedClassCode }
 
     var showNameplateDialog by remember { mutableStateOf(false) }
@@ -140,6 +141,11 @@ fun RollCallScreen(
     var moveStudent by remember { mutableStateOf<com.jf.checkin.data.model.Student?>(null) }
     var showResetAllDialog by remember { mutableStateOf(false) }
     var showTmsAfterShareDialog by remember { mutableStateOf(false) }
+    var showScheduledDetailDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(selectedClassCode) {
+        viewModel.refreshScheduledSync()
+    }
 
     // Android 8/9 保存相册/下载目录仍需 WRITE_EXTERNAL_STORAGE，按需申请后继续原操作
     var pendingStorageAction by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -269,6 +275,48 @@ fun RollCallScreen(
                 containerColor = Color.White
             )
         )
+
+        // 预约考勤等待提醒条
+        if (scheduledSync != null && scheduledSync?.classCode == selectedClassCode) {
+            Surface(
+                color = Color(0xFFEFF6FF),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBFDBFE)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showScheduledDetailDialog = true }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Schedule,
+                            contentDescription = null,
+                            tint = PrimaryBlue,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "已预约在 ${scheduledSync?.targetTime} 上课后自动考勤",
+                            color = PrimaryBlue,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                    Text(
+                        text = "查看 / 取消",
+                        color = PrimaryBlue,
+                        fontSize = 12.sp,
+                        textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline
+                    )
+                }
+            }
+        }
 
         if (classList.isEmpty()) {
             // 空状态提示
@@ -409,17 +457,70 @@ fun RollCallScreen(
         )
     }
 
-    // 校管家自动考勤：加载 / 预览 / 提交结果 / 错误
+    // 校管家自动考勤：加载 / 预览 / 提交结果 / 错误 / 定时预约
     TmsSyncDialogs(
         state = tmsSyncState,
         onDismiss = { viewModel.clearTmsSyncState() },
         onReload = { date -> viewModel.startTmsSync(date) },
-        onConfirm = { viewModel.submitTmsSync() },
+        onConfirm = { viewModel.submitTmsSync(context) },
+        onCancelSchedule = { code -> viewModel.cancelScheduledSync(context, code) },
         onNavigateToSettings = {
             viewModel.clearTmsSyncState()
             onNavigateToSettings()
         }
     )
+
+    // 点击预约考勤条弹出的详情与取消弹窗
+    if (showScheduledDetailDialog && scheduledSync != null) {
+        val currentScheduled = scheduledSync
+        AlertDialog(
+            onDismissRequest = { showScheduledDetailDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Schedule,
+                    contentDescription = null,
+                    tint = PrimaryBlue,
+                    modifier = Modifier.size(28.dp)
+                )
+            },
+            title = { Text("考勤已预约", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "班级 ${currentScheduled?.classCode} 已预约在 ${currentScheduled?.targetTime} 上课后自动提交考勤至校管家。",
+                        fontSize = 14.sp,
+                        color = Color(0xFF1E293B)
+                    )
+                    Text(
+                        text = "您可以随时退出应用，系统在到达上课时间后会在后台自动执行同步并发送通知。若在此之前修改了学生签到状态，后台将自动按最新点名结果提交。",
+                        fontSize = 12.sp,
+                        color = Color(0xFF64748B)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showScheduledDetailDialog = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                ) {
+                    Text("我知道了")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = {
+                        val code = currentScheduled?.classCode
+                        if (code != null) {
+                            viewModel.cancelScheduledSync(context, code)
+                        }
+                        showScheduledDetailDialog = false
+                    }
+                ) {
+                    Text("取消预约")
+                }
+            }
+        )
+    }
 
     // 分享签到长图后，询问是否继续把当前班考勤同步到校管家。
     if (showTmsAfterShareDialog) {
@@ -1238,6 +1339,7 @@ private fun TmsSyncDialogs(
     onDismiss: () -> Unit,
     onReload: (LocalDate) -> Unit,
     onConfirm: () -> Unit,
+    onCancelSchedule: (String) -> Unit,
     onNavigateToSettings: () -> Unit
 ) {
     when (state) {
@@ -1256,6 +1358,11 @@ private fun TmsSyncDialogs(
             onReload = onReload,
             onConfirm = onConfirm
         )
+        is TmsSyncState.Scheduled -> TmsScheduledDialog(
+            state = state,
+            onDismiss = onDismiss,
+            onCancelSchedule = onCancelSchedule
+        )
         is TmsSyncState.Success -> TmsSuccessDialog(
             results = state.results,
             onDismiss = onDismiss
@@ -1266,6 +1373,70 @@ private fun TmsSyncDialogs(
             onNavigateToSettings = onNavigateToSettings
         )
     }
+}
+
+@Composable
+private fun TmsScheduledDialog(
+    state: TmsSyncState.Scheduled,
+    onDismiss: () -> Unit,
+    onCancelSchedule: (String) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Schedule,
+                contentDescription = null,
+                tint = PrimaryBlue,
+                modifier = Modifier.size(28.dp)
+            )
+        },
+        title = {
+            Text("考勤已预约", fontWeight = FontWeight.Bold)
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "班级 ${state.classCode} 的考勤已加入后台等待队列，将于上课时间（${state.startTime}）自动提交至校管家。",
+                    fontSize = 14.sp,
+                    color = Color(0xFF1E293B)
+                )
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFFF8FAFC),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text("• 您可以退出应用，到达上课时间后台将自动执行提交。", fontSize = 12.sp, color = Color(0xFF64748B))
+                        Text("• 考勤完成后将通过系统通知栏提醒结果。", fontSize = 12.sp, color = Color(0xFF64748B))
+                        Text("• 等待期间若有点名变动，后台将以最新点名数据为准。", fontSize = 12.sp, color = Color(0xFF64748B))
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+            ) {
+                Text("我知道了")
+            }
+        },
+        dismissButton = {
+            OutlinedButton(
+                onClick = {
+                    onCancelSchedule(state.classCode)
+                    onDismiss()
+                }
+            ) {
+                Text("取消预约")
+            }
+        }
+    )
 }
 
 @Composable
@@ -1297,6 +1468,8 @@ private fun TmsPreviewDialog(
     val context = LocalContext.current
     var dateInput by remember(preview.date) { mutableStateOf(preview.date) }
     val dateChanged = dateInput.trim() != preview.date
+    val futureStart = preview.earliestFutureStartTime()
+    val targetTimeStr = futureStart?.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
     val reload = {
         val parsed = runCatching { LocalDate.parse(dateInput.trim()) }.getOrNull()
         if (parsed == null) {
@@ -1350,6 +1523,38 @@ private fun TmsPreviewDialog(
                     )
                 }
                 Spacer(modifier = Modifier.height(12.dp))
+
+                if (futureStart != null) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFFEFF6FF),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            Color(0xFFBFDBFE)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Schedule,
+                                contentDescription = null,
+                                tint = PrimaryBlue,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "尚未到达上课时间（课程将于 $targetTimeStr 开始）。点击「预约到时考勤」后，系统将在后台等待至 $targetTimeStr 自动提交考勤至校管家，期间无需保持应用打开。",
+                                fontSize = 12.sp,
+                                color = Color(0xFF1E40AF),
+                                lineHeight = 18.sp
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
 
                 if (preview.plans.isEmpty()) {
                     Text(
@@ -1411,17 +1616,23 @@ private fun TmsPreviewDialog(
                     }
                 }
                 preview.canSubmit -> {
+                    val isScheduled = futureStart != null
                     Button(
                         onClick = onConfirm,
                         colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
                     ) {
                         Icon(
-                            Icons.Default.CloudUpload,
+                            imageVector = if (isScheduled) Icons.Default.Schedule else Icons.Default.CloudUpload,
                             contentDescription = null,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("确认同步 (${preview.submittableCount})", fontWeight = FontWeight.Bold)
+                        val label = if (isScheduled) {
+                            "预约到时考勤 ($targetTimeStr)"
+                        } else {
+                            "确认同步 (${preview.submittableCount})"
+                        }
+                        Text(label, fontWeight = FontWeight.Bold)
                     }
                 }
                 else -> {

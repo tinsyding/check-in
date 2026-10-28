@@ -13,11 +13,13 @@ import com.jf.checkin.data.remote.TmsCourseResult
 import com.jf.checkin.data.remote.TmsCredentials
 import com.jf.checkin.data.remote.TmsSyncPreview
 import com.jf.checkin.data.repository.HistoryRepository
+import com.jf.checkin.data.repository.ScheduledTmsSync
 import com.jf.checkin.data.repository.StudentRepository
 import com.jf.checkin.data.repository.UserPrefRepository
 import com.jf.checkin.logic.TableImageGenerator
 import com.jf.checkin.logic.TimeMatcher
 import com.jf.checkin.logic.TmsReminderPlanner
+import com.jf.checkin.logic.TmsScheduledSyncScheduler
 import com.jf.checkin.util.ShareUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,6 +43,12 @@ sealed interface TmsSyncState {
     data class Preview(val preview: TmsSyncPreview) : TmsSyncState
     data object Submitting : TmsSyncState
     data class Success(val results: List<TmsCourseResult>) : TmsSyncState
+    data class Scheduled(
+        val classCode: String,
+        val date: String,
+        val startTime: String,
+        val scheduledTime: String
+    ) : TmsSyncState
     data class Error(val message: String, val needsSettings: Boolean = false) : TmsSyncState
 }
 
@@ -95,6 +103,14 @@ class RollCallViewModel(
     private val _tmsSyncState = MutableStateFlow<TmsSyncState>(TmsSyncState.Idle)
     val tmsSyncState: StateFlow<TmsSyncState> = _tmsSyncState.asStateFlow()
     private var lastTmsPreview: TmsSyncPreview? = null
+
+    private val _scheduledSync = MutableStateFlow<ScheduledTmsSync?>(null)
+    val scheduledSync: StateFlow<ScheduledTmsSync?> = _scheduledSync.asStateFlow()
+
+    fun refreshScheduledSync() {
+        val code = _selectedClassCode.value
+        _scheduledSync.value = if (code != null) prefRepository.getScheduledTmsSync(code) else null
+    }
 
     fun setNameplateFontStyle(style: com.jf.checkin.logic.NameplateFontStyle) {
         _nameplateFontStyle.value = style
@@ -200,6 +216,7 @@ class RollCallViewModel(
 
     fun selectClass(classCode: String) {
         _selectedClassCode.value = classCode
+        _scheduledSync.value = prefRepository.getScheduledTmsSync(classCode)
     }
 
     fun updateTeacherName(name: String) {
@@ -348,8 +365,8 @@ class RollCallViewModel(
         }
     }
 
-    /** 确认预览后，把可同步的课程提交到校管家。 */
-    fun submitTmsSync() {
+    /** 确认预览后，把可同步的课程提交到校管家。若尚未到达上课时间，则在后台等待至上课开始时间自动提交。 */
+    fun submitTmsSync(context: Context? = null) {
         val preview = lastTmsPreview ?: return
         if (!preview.canSubmit) return
 
@@ -359,6 +376,23 @@ class RollCallViewModel(
             _tmsSyncState.value = TmsSyncState.Error(
                 "请先在设置中填写校管家（TMS）账号和密码",
                 needsSettings = true
+            )
+            return
+        }
+
+        // 检查是否在上课开始前：如果是且传入了 Context，则进入后台等待调度
+        val futureStart = preview.earliestFutureStartTime()
+        if (futureStart != null && context != null) {
+            val currentCode = _selectedClassCode.value ?: preview.plans.firstOrNull()?.className ?: return
+            val date = runCatching { LocalDate.parse(preview.date) }.getOrNull() ?: LocalDate.now()
+            TmsScheduledSyncScheduler.schedule(context, currentCode, date, futureStart)
+            refreshScheduledSync()
+            val timeStr = futureStart.format(DateTimeFormatter.ofPattern("HH:mm"))
+            _tmsSyncState.value = TmsSyncState.Scheduled(
+                classCode = currentCode,
+                date = preview.date,
+                startTime = timeStr,
+                scheduledTime = timeStr
             )
             return
         }
@@ -379,6 +413,14 @@ class RollCallViewModel(
                     e.localizedMessage ?: "同步校管家考勤失败"
                 )
             }
+        }
+    }
+
+    fun cancelScheduledSync(context: Context, classCode: String) {
+        TmsScheduledSyncScheduler.cancel(context, classCode)
+        refreshScheduledSync()
+        if (_tmsSyncState.value is TmsSyncState.Scheduled) {
+            _tmsSyncState.value = TmsSyncState.Idle
         }
     }
 

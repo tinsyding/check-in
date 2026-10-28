@@ -25,6 +25,7 @@
 ### 校管家考勤同步
 - 点击点名页顶部同步按钮，自动登录校管家并匹配当日课程。
 - 提交前提供预览弹窗，核对出勤统计、未匹配学员与课消金额。
+- 只有在上课开始后才执行考勤；若提前完成点名并点击同步，系统将在后台等待至上课时间自动提交，无需保持应用开启。
 - 支持按「班级号+班型」匹配 α1/β1/β2/β3 课程（含线上课）。
 - 匹配学员统一按出勤计费提交，自动跳过已点名课程，不触发微信/短信通知。
 - 支持每日 18:00 本地定时检查（基于 WorkManager），未完成同步的班级会通过系统通知提醒，无需外部推送服务。
@@ -36,7 +37,7 @@
 - **架构模式**：MVVM + 单向数据流 (UDF)
 - **导航组件**：[Navigation Compose](https://developer.android.com/jetpack/compose/navigation)
 - **本地存储**：SharedPreferences（配置与临时状态）+ JSON 文件（历史记录归档）
-- **后台任务**：WorkManager（每日同步提醒）
+- **后台任务**：WorkManager（上课到时自动考勤、每日未同步提醒）
 - **PDF 与长图**：`android.graphics.pdf.PdfDocument` / `android.graphics.Canvas`
 - **网络与同步**：
   - 原生 Socket 实现 LPR (RFC 1179) 及 FTP 打印协议

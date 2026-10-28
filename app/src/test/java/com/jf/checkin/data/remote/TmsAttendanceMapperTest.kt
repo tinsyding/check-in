@@ -1,6 +1,8 @@
 package com.jf.checkin.data.remote
 
 import com.jf.checkin.data.model.AttendanceStatus
+import java.time.LocalDate
+import java.time.LocalDateTime
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -205,6 +207,85 @@ class TmsAttendanceMapperTest {
         )
 
         assertFalse(plan.canSubmit)
+    }
+
+    @Test
+    fun getStartDateTimeResolvesFromStartTimeOrClassTime() {
+        val date = LocalDate.of(2026, 10, 24)
+
+        // 1. 从 startTime ISO 时间解析
+        val planIso = plan(listOf(tmsMatch(AttendanceStatus.PRESENT))).copy(
+            startTime = "2026-10-24T07:50:00"
+        )
+        assertEquals(LocalDateTime.of(2026, 10, 24, 7, 50), planIso.getStartDateTime(date))
+
+        // 2. 从 HH:mm 解析
+        val planCompact = plan(listOf(tmsMatch(AttendanceStatus.PRESENT))).copy(
+            startTime = "07:50"
+        )
+        assertEquals(LocalDateTime.of(2026, 10, 24, 7, 50), planCompact.getStartDateTime(date))
+
+        // 3. startTime 为空时从 classTime 解析
+        val planFallback = plan(listOf(tmsMatch(AttendanceStatus.PRESENT))).copy(
+            startTime = "",
+            classTime = "周六07:50~09:50"
+        )
+        assertEquals(LocalDateTime.of(2026, 10, 24, 7, 50), planFallback.getStartDateTime(date))
+    }
+
+    @Test
+    fun earliestFutureStartTimeReturnsTargetWhenBeforeCourseStart() {
+        val date = "2026-10-24"
+        val plan = plan(listOf(tmsMatch(AttendanceStatus.PRESENT))).copy(
+            startTime = "2026-10-24T07:50:00"
+        )
+        val preview = TmsSyncPreview(
+            date = date,
+            plans = listOf(plan),
+            warnings = emptyList()
+        )
+
+        // 上课前 20 分钟 (07:30)：应该返回当天 07:50 作为预约时间
+        val beforeCourse = LocalDateTime.of(2026, 10, 24, 7, 30)
+        assertEquals(LocalDateTime.of(2026, 10, 24, 7, 50), preview.earliestFutureStartTime(beforeCourse))
+
+        // 上课时间刚好到达 (07:50)：应该返回 null（表示可立即考勤）
+        val atCourse = LocalDateTime.of(2026, 10, 24, 7, 50)
+        assertNull(preview.earliestFutureStartTime(atCourse))
+
+        // 上课后 (08:15)：应该返回 null（可立即考勤）
+        val afterCourse = LocalDateTime.of(2026, 10, 24, 8, 15)
+        assertNull(preview.earliestFutureStartTime(afterCourse))
+    }
+
+    @Test
+    fun earliestFutureStartTimeHandlesPastDateAndMultiplePlans() {
+        val plan1 = plan(listOf(tmsMatch(AttendanceStatus.PRESENT))).copy(
+            className = "2026028MAA12β2",
+            startTime = "2026-10-24T07:50:00"
+        )
+        val plan2 = plan(listOf(tmsMatch(AttendanceStatus.PRESENT))).copy(
+            className = "2026028MAA12β3",
+            startTime = "2026-10-24T09:50:00"
+        )
+        val preview = TmsSyncPreview(
+            date = "2026-10-24",
+            plans = listOf(plan1, plan2),
+            warnings = emptyList()
+        )
+
+        // 上课前 (07:00)：返回最早的一个 (07:50)
+        val early = LocalDateTime.of(2026, 10, 24, 7, 0)
+        assertEquals(LocalDateTime.of(2026, 10, 24, 7, 50), preview.earliestFutureStartTime(early))
+
+        // 补点昨天的课：返回 null（直接提交）
+        val yesterdayPreview = TmsSyncPreview(
+            date = "2026-10-23",
+            plans = listOf(plan1),
+            warnings = emptyList()
+        )
+        val today = LocalDateTime.of(2026, 10, 24, 7, 0)
+        assertNull(yesterdayPreview.earliestFutureStartTime(today))
     }
 
     private fun tmsMatch(status: AttendanceStatus) = TmsStudentMatch(
