@@ -11,6 +11,7 @@ import com.jf.checkin.data.remote.TmsAttendanceService
 import com.jf.checkin.data.remote.TmsAttendanceMapper
 import com.jf.checkin.data.remote.TmsCourseResult
 import com.jf.checkin.data.remote.TmsCredentials
+import com.jf.checkin.data.remote.TmsMissingReport
 import com.jf.checkin.data.remote.TmsSyncPreview
 import com.jf.checkin.data.repository.HistoryRepository
 import com.jf.checkin.data.repository.ScheduledTmsSync
@@ -50,6 +51,15 @@ sealed interface TmsSyncState {
         val scheduledTime: String
     ) : TmsSyncState
     data class Error(val message: String, val needsSettings: Boolean = false) : TmsSyncState
+}
+
+sealed interface TmsCheckState {
+    data object Idle : TmsCheckState
+    data object Loading : TmsCheckState
+    data class Report(val report: TmsMissingReport) : TmsCheckState
+    data object Submitting : TmsCheckState
+    data class Success(val results: List<TmsCourseResult>) : TmsCheckState
+    data class Error(val message: String, val needsSettings: Boolean = false) : TmsCheckState
 }
 
 data class ClassInfo(
@@ -103,6 +113,10 @@ class RollCallViewModel(
     private val _tmsSyncState = MutableStateFlow<TmsSyncState>(TmsSyncState.Idle)
     val tmsSyncState: StateFlow<TmsSyncState> = _tmsSyncState.asStateFlow()
     private var lastTmsPreview: TmsSyncPreview? = null
+
+    private val _tmsCheckState = MutableStateFlow<TmsCheckState>(TmsCheckState.Idle)
+    val tmsCheckState: StateFlow<TmsCheckState> = _tmsCheckState.asStateFlow()
+    private var lastMissingReport: TmsMissingReport? = null
 
     private val _scheduledSync = MutableStateFlow<ScheduledTmsSync?>(null)
     val scheduledSync: StateFlow<ScheduledTmsSync?> = _scheduledSync.asStateFlow()
@@ -365,10 +379,19 @@ class RollCallViewModel(
         }
     }
 
-    /** 确认预览后，把可同步的课程提交到校管家。若尚未到达上课时间，则在后台等待至上课开始时间自动提交。 */
-    fun submitTmsSync(context: Context? = null) {
+    /**
+     * 确认预览后，把可同步的课程提交到校管家。
+     * 若尚未到达上课时间，则在后台等待至上课开始时间自动提交。
+     * @param force 名单对不上时强行提交：只提交已匹配学员，未匹配的本地学员跳过。
+     */
+    fun submitTmsSync(context: Context? = null, force: Boolean = false) {
         val preview = lastTmsPreview ?: return
-        if (!preview.canSubmit) return
+        val eligible = if (force) {
+            preview.plans.any { it.canSubmit || it.canForceSubmit }
+        } else {
+            preview.canSubmit
+        }
+        if (!eligible) return
 
         val username = prefRepository.tmsUsername
         val password = prefRepository.tmsPassword
@@ -380,9 +403,9 @@ class RollCallViewModel(
             return
         }
 
-        // 检查是否在上课开始前：如果是且传入了 Context，则进入后台等待调度
+        // 检查是否在上课开始前：普通考勤可预约等待；强行考勤由老师明确操作，立即提交。
         val futureStart = preview.earliestFutureStartTime()
-        if (futureStart != null && context != null) {
+        if (!force && futureStart != null && context != null) {
             val currentCode = _selectedClassCode.value ?: preview.plans.firstOrNull()?.className ?: return
             val date = runCatching { LocalDate.parse(preview.date) }.getOrNull() ?: LocalDate.now()
             TmsScheduledSyncScheduler.schedule(context, currentCode, date, futureStart)
@@ -400,7 +423,11 @@ class RollCallViewModel(
         _tmsSyncState.value = TmsSyncState.Submitting
         viewModelScope.launch {
             try {
-                val results = tmsService.submit(preview, TmsCredentials(username, password))
+                val results = tmsService.submit(
+                    preview,
+                    TmsCredentials(username, password),
+                    force = force
+                )
                 val date = runCatching { LocalDate.parse(preview.date) }.getOrNull()
                 if (date != null) {
                     val syncedNames = results.filter { it.success }.map { it.className } +
@@ -414,6 +441,92 @@ class RollCallViewModel(
                 )
             }
         }
+    }
+
+    /**
+     * 检查最近 [days] 天（含今天）还有哪些本地班级没有在校管家点名。
+     */
+    fun startTmsCheck(days: Int = 1) {
+        val classNames = allStudents.value
+            .groupBy { it.classCode }
+            .values
+            .flatMap { TmsReminderPlanner.classNamesFor(it) }
+            .distinct()
+        if (classNames.isEmpty()) {
+            _tmsCheckState.value = TmsCheckState.Error("当前名单没有可检查的班级")
+            return
+        }
+
+        val username = prefRepository.tmsUsername
+        val password = prefRepository.tmsPassword
+        if (username.isBlank() || password.isBlank()) {
+            _tmsCheckState.value = TmsCheckState.Error(
+                "请先在设置中填写校管家（TMS）账号和密码",
+                needsSettings = true
+            )
+            return
+        }
+
+        _tmsCheckState.value = TmsCheckState.Loading
+        viewModelScope.launch {
+            try {
+                val report = tmsService.checkMissingAttendance(
+                    classNames = classNames,
+                    days = days,
+                    credentials = TmsCredentials(username, password)
+                )
+                lastMissingReport = report
+                _tmsCheckState.value = TmsCheckState.Report(report)
+            } catch (e: Exception) {
+                lastMissingReport = null
+                _tmsCheckState.value = TmsCheckState.Error(
+                    e.localizedMessage ?: "检查校管家考勤失败"
+                )
+            }
+        }
+    }
+
+    /** 对检查结果中的未考勤课程一键考勤：按校管家名单全员出勤并计费。 */
+    fun submitMissingAttendance() {
+        val report = lastMissingReport ?: return
+        if (!report.canSubmit) return
+
+        val username = prefRepository.tmsUsername
+        val password = prefRepository.tmsPassword
+        if (username.isBlank() || password.isBlank()) {
+            _tmsCheckState.value = TmsCheckState.Error(
+                "请先在设置中填写校管家（TMS）账号和密码",
+                needsSettings = true
+            )
+            return
+        }
+
+        _tmsCheckState.value = TmsCheckState.Submitting
+        viewModelScope.launch {
+            try {
+                val results = tmsService.submitMissingAttendance(
+                    report,
+                    TmsCredentials(username, password)
+                )
+                val syncedByDate = results.filter { it.success && it.date.isNotBlank() }
+                    .groupBy { it.date }
+                for ((dateText, dateResults) in syncedByDate) {
+                    val date = runCatching { LocalDate.parse(dateText) }.getOrNull() ?: continue
+                    prefRepository.markTmsSynced(date, dateResults.map { it.className })
+                }
+                lastMissingReport = null
+                _tmsCheckState.value = TmsCheckState.Success(results)
+            } catch (e: Exception) {
+                _tmsCheckState.value = TmsCheckState.Error(
+                    e.localizedMessage ?: "一键考勤失败"
+                )
+            }
+        }
+    }
+
+    fun clearTmsCheckState() {
+        _tmsCheckState.value = TmsCheckState.Idle
+        lastMissingReport = null
     }
 
     fun cancelScheduledSync(context: Context, classCode: String) {

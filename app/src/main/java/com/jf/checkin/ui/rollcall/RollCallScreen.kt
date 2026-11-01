@@ -34,6 +34,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.FactCheck
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudUpload
@@ -93,6 +94,8 @@ import androidx.core.content.ContextCompat
 import com.jf.checkin.data.model.AttendanceStatus
 import com.jf.checkin.data.remote.TmsCoursePlan
 import com.jf.checkin.data.remote.TmsCourseResult
+import com.jf.checkin.data.remote.TmsMissingCourse
+import com.jf.checkin.data.remote.TmsMissingReport
 import com.jf.checkin.data.remote.TmsSyncPreview
 import com.jf.checkin.ui.theme.AccentGreen
 import com.jf.checkin.logic.NameplateFontStyle
@@ -127,6 +130,7 @@ fun RollCallScreen(
     val nameplateFontStyle by viewModel.nameplateFontStyle.collectAsState()
     val movedStudents by viewModel.movedStudents.collectAsState()
     val tmsSyncState by viewModel.tmsSyncState.collectAsState()
+    val tmsCheckState by viewModel.tmsCheckState.collectAsState()
     val scheduledSync by viewModel.scheduledSync.collectAsState()
     val movedOutOfCurrent = movedStudents.filter { it.originalClassCode == selectedClassCode }
 
@@ -243,6 +247,14 @@ fun RollCallScreen(
                     Icon(
                         imageVector = Icons.Default.CloudUpload,
                         contentDescription = "自动同步校管家考勤",
+                        tint = PrimaryBlue
+                    )
+                }
+                // 检查今天/最近三日还有哪些班级没有考勤
+                IconButton(onClick = { viewModel.startTmsCheck(1) }) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.FactCheck,
+                        contentDescription = "检查未考勤班级",
                         tint = PrimaryBlue
                     )
                 }
@@ -463,9 +475,22 @@ fun RollCallScreen(
         onDismiss = { viewModel.clearTmsSyncState() },
         onReload = { date -> viewModel.startTmsSync(date) },
         onConfirm = { viewModel.submitTmsSync(context) },
+        onForceConfirm = { viewModel.submitTmsSync(context, force = true) },
         onCancelSchedule = { code -> viewModel.cancelScheduledSync(context, code) },
         onNavigateToSettings = {
             viewModel.clearTmsSyncState()
+            onNavigateToSettings()
+        }
+    )
+
+    // 检查今天/最近三日未考勤班级，并支持一键考勤
+    TmsCheckDialogs(
+        state = tmsCheckState,
+        onDismiss = { viewModel.clearTmsCheckState() },
+        onReload = { days -> viewModel.startTmsCheck(days) },
+        onSubmit = { viewModel.submitMissingAttendance() },
+        onNavigateToSettings = {
+            viewModel.clearTmsCheckState()
             onNavigateToSettings()
         }
     )
@@ -1339,6 +1364,7 @@ private fun TmsSyncDialogs(
     onDismiss: () -> Unit,
     onReload: (LocalDate) -> Unit,
     onConfirm: () -> Unit,
+    onForceConfirm: () -> Unit,
     onCancelSchedule: (String) -> Unit,
     onNavigateToSettings: () -> Unit
 ) {
@@ -1356,7 +1382,8 @@ private fun TmsSyncDialogs(
             preview = state.preview,
             onDismiss = onDismiss,
             onReload = onReload,
-            onConfirm = onConfirm
+            onConfirm = onConfirm,
+            onForceConfirm = onForceConfirm
         )
         is TmsSyncState.Scheduled -> TmsScheduledDialog(
             state = state,
@@ -1463,10 +1490,12 @@ private fun TmsPreviewDialog(
     preview: TmsSyncPreview,
     onDismiss: () -> Unit,
     onReload: (LocalDate) -> Unit,
-    onConfirm: () -> Unit
+    onConfirm: () -> Unit,
+    onForceConfirm: () -> Unit
 ) {
     val context = LocalContext.current
     var dateInput by remember(preview.date) { mutableStateOf(preview.date) }
+    var showForceConfirm by remember { mutableStateOf(false) }
     val dateChanged = dateInput.trim() != preview.date
     val futureStart = preview.earliestFutureStartTime()
     val targetTimeStr = futureStart?.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
@@ -1615,24 +1644,48 @@ private fun TmsPreviewDialog(
                         Text("按新日期重新匹配")
                     }
                 }
-                preview.canSubmit -> {
-                    val isScheduled = futureStart != null
-                    Button(
-                        onClick = onConfirm,
-                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                preview.canSubmit || preview.canForceSubmit -> {
+                    Column(
+                        horizontalAlignment = Alignment.End,
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Icon(
-                            imageVector = if (isScheduled) Icons.Default.Schedule else Icons.Default.CloudUpload,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        val label = if (isScheduled) {
-                            "预约到时考勤 ($targetTimeStr)"
-                        } else {
-                            "确认同步 (${preview.submittableCount})"
+                        if (preview.canSubmit) {
+                            val isScheduled = futureStart != null
+                            Button(
+                                onClick = onConfirm,
+                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                            ) {
+                                Icon(
+                                    imageVector = if (isScheduled) Icons.Default.Schedule else Icons.Default.CloudUpload,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                val label = if (isScheduled) {
+                                    "预约到时考勤 ($targetTimeStr)"
+                                } else {
+                                    "确认同步 (${preview.submittableCount})"
+                                }
+                                Text(label, fontWeight = FontWeight.Bold)
+                            }
                         }
-                        Text(label, fontWeight = FontWeight.Bold)
+                        if (preview.canForceSubmit) {
+                            Button(
+                                onClick = { showForceConfirm = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB45309))
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    if (preview.canSubmit) "名单对不上？强行考勤" else "强行考勤 (${preview.forceSubmittableCount})",
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
                     }
                 }
                 else -> {
@@ -1642,7 +1695,7 @@ private fun TmsPreviewDialog(
                 }
             }
         },
-        dismissButton = if (preview.canSubmit || dateChanged) {
+        dismissButton = if (preview.canSubmit || preview.canForceSubmit || dateChanged) {
             {
                 OutlinedButton(onClick = onDismiss) {
                     Text("取消")
@@ -1652,6 +1705,397 @@ private fun TmsPreviewDialog(
             null
         }
     )
+
+    if (showForceConfirm) {
+        val forcePlans = preview.plans.filter { it.canForceSubmit }
+        val normalCount = preview.plans.count { it.canSubmit }
+        val skippedStudents = preview.forceSkippedStudents
+        AlertDialog(
+            onDismissRequest = { showForceConfirm = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.FactCheck,
+                    contentDescription = null,
+                    tint = Color(0xFFB45309),
+                    modifier = Modifier.size(28.dp)
+                )
+            },
+            title = { Text("确认强行考勤？", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 380.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "本地名单与校管家不一致，强行考勤只会提交已匹配的学员，未匹配的本地学员不会写入校管家。",
+                        fontSize = 13.sp,
+                        color = Color(0xFF334155)
+                    )
+                    forcePlans.forEach { plan ->
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFFFFFBEB),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFCD34D)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Text(
+                                    text = plan.className,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = Color(0xFF92400E)
+                                )
+                                Text(
+                                    text = "将提交已匹配 ${plan.matches.size} 人；跳过：${
+                                        plan.unmatchedAppStudents.joinToString("、") { it.name }
+                                    }",
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF92400E)
+                                )
+                            }
+                        }
+                    }
+                    if (normalCount > 0) {
+                        Text(
+                            text = "另有 $normalCount 个班型可正常同步，将一并提交。",
+                            fontSize = 12.sp,
+                            color = Color(0xFF475569)
+                        )
+                    }
+                    if (skippedStudents.isNotEmpty()) {
+                        Text(
+                            text = "共跳过 ${skippedStudents.size} 名本地学员：${
+                                skippedStudents.joinToString("、") { it.name }
+                            }",
+                            fontSize = 12.sp,
+                            color = Color(0xFFB45309)
+                        )
+                    }
+                    Text(
+                        text = "校管家多出的学员保持原状；已匹配学员统一按出勤提交并计费，且不会发送微信/短信通知。",
+                        fontSize = 12.sp,
+                        color = Color(0xFF64748B)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showForceConfirm = false
+                        onForceConfirm()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB45309))
+                ) {
+                    Text("确认强行考勤", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showForceConfirm = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun TmsCheckDialogs(
+    state: TmsCheckState,
+    onDismiss: () -> Unit,
+    onReload: (Int) -> Unit,
+    onSubmit: () -> Unit,
+    onNavigateToSettings: () -> Unit
+) {
+    when (state) {
+        TmsCheckState.Idle -> Unit
+        TmsCheckState.Loading -> TmsBusyDialog(
+            title = "正在检查校管家考勤",
+            message = "正在读取课程和点名状态，请稍候…"
+        )
+        TmsCheckState.Submitting -> TmsBusyDialog(
+            title = "正在一键考勤",
+            message = "正在按校管家名单全员出勤并计费，请勿关闭应用…"
+        )
+        is TmsCheckState.Report -> TmsMissingReportDialog(
+            report = state.report,
+            onDismiss = onDismiss,
+            onReload = onReload,
+            onSubmit = onSubmit
+        )
+        is TmsCheckState.Success -> TmsSuccessDialog(
+            results = state.results,
+            onDismiss = onDismiss
+        )
+        is TmsCheckState.Error -> TmsErrorDialog(
+            state = TmsSyncState.Error(state.message, state.needsSettings),
+            onDismiss = onDismiss,
+            onNavigateToSettings = onNavigateToSettings
+        )
+    }
+}
+
+@Composable
+private fun TmsMissingReportDialog(
+    report: TmsMissingReport,
+    onDismiss: () -> Unit,
+    onReload: (Int) -> Unit,
+    onSubmit: () -> Unit
+) {
+    var showConfirm by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.FactCheck,
+                contentDescription = null,
+                tint = if (report.canSubmit) Color(0xFFB45309) else AccentGreen,
+                modifier = Modifier.size(28.dp)
+            )
+        },
+        title = { Text("校管家考勤检查", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 460.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = report.days == 1,
+                        onClick = { if (report.days != 1) onReload(1) },
+                        label = { Text("今日") }
+                    )
+                    FilterChip(
+                        selected = report.days == 3,
+                        onClick = { if (report.days != 3) onReload(3) },
+                        label = { Text("最近三日") }
+                    )
+                }
+                Text(
+                    text = "检查范围：${report.startDate} ~ ${report.endDate}，共检查 ${report.checkedCourseCount} 节课。",
+                    fontSize = 12.sp,
+                    color = Color(0xFF64748B)
+                )
+
+                if (report.courses.isEmpty()) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFFF0FDF4),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF86EFAC)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Check,
+                                contentDescription = null,
+                                tint = AccentGreen,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "没有发现未考勤的班级，考勤已全部完成。",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFF15803D)
+                            )
+                        }
+                    }
+                } else {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFFFFFBEB),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFCD34D)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                text = "发现 ${report.courses.size} 节未考勤课程",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = Color(0xFF92400E)
+                            )
+                            Text(
+                                text = "可一键考勤 ${report.submittableCount} 节，共 ${report.totalStudentCount} 人次。",
+                                fontSize = 12.sp,
+                                color = Color(0xFF92400E)
+                            )
+                        }
+                    }
+                    report.courses.forEach { course ->
+                        TmsMissingCourseCard(course)
+                    }
+                }
+
+                if (report.warnings.isNotEmpty()) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFFF8FAFC),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Text(
+                                text = "需要注意",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = Color(0xFF475569)
+                            )
+                            report.warnings.forEach { warning ->
+                                Text(
+                                    text = "• $warning",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF64748B)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Text(
+                    text = "一键考勤会直接读取校管家课程学员名单，全部标记为已出勤并计费，不依赖本地名单匹配，因此名单对不上也能完成考勤。",
+                    fontSize = 11.sp,
+                    color = Color(0xFF64748B)
+                )
+            }
+        },
+        confirmButton = {
+            if (report.canSubmit) {
+                Button(
+                    onClick = { showConfirm = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB45309))
+                ) {
+                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("一键考勤 (${report.submittableCount})", fontWeight = FontWeight.Bold)
+                }
+            } else {
+                Button(onClick = onDismiss) {
+                    Text("关闭")
+                }
+            }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = onDismiss) {
+                Text(if (report.canSubmit) "取消" else "关闭")
+            }
+        }
+    )
+
+    if (showConfirm) {
+        AlertDialog(
+            onDismissRequest = { showConfirm = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = null,
+                    tint = Color(0xFFB45309),
+                    modifier = Modifier.size(28.dp)
+                )
+            },
+            title = { Text("确认一键考勤？", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 360.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "将把以下 ${report.submittableCount} 节课的校管家学员全部标记为已出勤并计费，共 ${report.totalStudentCount} 人次。",
+                        fontSize = 13.sp,
+                        color = Color(0xFF334155)
+                    )
+                    report.submittableCourses.forEach { course ->
+                        Text(
+                            text = "• ${course.date} ${course.className} ${course.displayTime}（${course.studentCount} 人）",
+                            fontSize = 12.sp,
+                            color = Color(0xFF475569)
+                        )
+                    }
+                    Text(
+                        text = "该操作会直接写入校管家，无法在本应用内撤销，请确认日期和班级无误。",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFFB45309)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showConfirm = false
+                        onSubmit()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB45309))
+                ) {
+                    Text("确认考勤", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showConfirm = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun TmsMissingCourseCard(course: TmsMissingCourse) {
+    val available = course.canSubmit
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = if (available) Color(0xFFF8FAFC) else Color(0xFFFFFBEB),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (available) Color(0xFFE2E8F0) else Color(0xFFFCD34D)
+        ),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = course.className,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = Color(0xFF1E293B),
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    text = course.date,
+                    fontSize = 11.sp,
+                    color = Color(0xFF64748B)
+                )
+            }
+            Spacer(modifier = Modifier.height(3.dp))
+            Text(
+                text = "${course.displayTime} · 校管家学员 ${course.studentCount} 人 · 每人课消 ${
+                    formatTmsCost(course.costAmount, course.unitCode)
+                }",
+                fontSize = 12.sp,
+                color = Color(0xFF475569)
+            )
+            if (course.message != null) {
+                Text(
+                    text = course.message,
+                    fontSize = 11.sp,
+                    color = Color(0xFFB45309)
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -1701,6 +2145,14 @@ private fun TmsPlanCard(plan: TmsCoursePlan) {
                     fontWeight = FontWeight.Medium,
                     color = if (plan.alreadyPointed) Color(0xFF64748B) else Color(0xFFB45309)
                 )
+                if (plan.canForceSubmit) {
+                    Text(
+                        text = "可强行考勤：只提交已匹配 ${plan.matches.size} 人，未匹配学员跳过。",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFFB45309)
+                    )
+                }
             } else {
                 Text(
                     text = "已匹配 ${plan.matches.size} 人：本地已到 ${plan.presentCount}（含迟到 ${plan.lateCount}） / 请假 ${plan.leaveCount} / 未到 ${plan.absentCount}",

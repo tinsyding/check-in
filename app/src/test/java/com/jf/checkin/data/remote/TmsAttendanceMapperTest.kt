@@ -288,6 +288,114 @@ class TmsAttendanceMapperTest {
         assertNull(yesterdayPreview.earliestFutureStartTime(today))
     }
 
+    @Test
+    fun forceAttendanceAllowedOnlyForRosterMismatch() {
+        val unmatched = com.jf.checkin.data.model.Student(
+            studentId = "app-2",
+            name = "未匹配学生",
+            classCode = "2026028MAA12",
+            classTime = "周六07:50~09:50",
+            classFormat = "β2"
+        )
+        val forcePlan = plan(
+            matches = listOf(tmsMatch(AttendanceStatus.PRESENT)),
+            unmatchedAppStudents = listOf(unmatched),
+            message = "有 1 名学员未匹配到校管家名单：未匹配学生",
+            forceAllowed = true
+        )
+
+        assertFalse(forcePlan.canSubmit)
+        assertTrue(forcePlan.canForceSubmit)
+
+        val preview = TmsSyncPreview(
+            date = "2026-10-24",
+            plans = listOf(forcePlan),
+            warnings = emptyList()
+        )
+        assertFalse(preview.canSubmit)
+        assertTrue(preview.canForceSubmit)
+        assertEquals(1, preview.forceSubmittableCount)
+        assertEquals(listOf("未匹配学生"), preview.forceSkippedStudents.map { it.name })
+
+        // 课消为 0 时不能强行提交
+        assertFalse(forcePlan.copy(costAmount = 0.0).canForceSubmit)
+        // 没有标记为“仅名单不一致”时不能强行提交
+        assertFalse(forcePlan.copy(forceAllowed = false).canForceSubmit)
+        // 已点名课程不能强行提交
+        assertFalse(forcePlan.copy(alreadyPointed = true).canForceSubmit)
+    }
+
+    @Test
+    fun forceAttendanceIncludesNormallySubmittablePlansInCount() {
+        val normal = plan(matches = listOf(tmsMatch(AttendanceStatus.PRESENT)))
+        val force = plan(
+            matches = listOf(tmsMatch(AttendanceStatus.PRESENT)),
+            unmatchedAppStudents = listOf(
+                com.jf.checkin.data.model.Student(
+                    studentId = "app-2",
+                    name = "未匹配学生",
+                    classCode = "2026028MAA12",
+                    classTime = "周六07:50~09:50",
+                    classFormat = "β2"
+                )
+            ),
+            message = "名单不一致",
+            forceAllowed = true
+        )
+        val preview = TmsSyncPreview("2026-10-24", listOf(normal, force), emptyList())
+
+        assertTrue(preview.canSubmit)
+        assertTrue(preview.canForceSubmit)
+        assertEquals(2, preview.forceSubmittableCount)
+    }
+
+    @Test
+    fun tmsDateAndDateTimeParseCommonFormats() {
+        assertEquals("2026-10-24", TmsAttendanceMapper.tmsDate("2026-10-24T07:50:00"))
+        assertEquals("2026-10-24", TmsAttendanceMapper.tmsDate("2026-10-24 07:50:00"))
+        assertEquals(
+            LocalDateTime.of(2026, 10, 24, 7, 50),
+            TmsAttendanceMapper.tmsDateTime("2026-10-24 07:50:00")
+        )
+        assertEquals(
+            LocalDateTime.of(2026, 10, 24, 7, 50),
+            TmsAttendanceMapper.tmsDateTime("2026-10-24T07:50:00")
+        )
+    }
+
+    @Test
+    fun missingReportCountsOnlySubmittableCourses() {
+        val ready = TmsMissingCourse(
+            date = "2026-10-24",
+            courseId = "course-1",
+            className = "2026028MAA12β2",
+            startTime = "2026-10-24T07:50:00",
+            endTime = "2026-10-24T09:50:00",
+            studentCount = 5,
+            attendanceDetailJson = "{}",
+            costAmount = 1.0,
+            unitCode = 2
+        )
+        val blocked = ready.copy(
+            courseId = "course-2",
+            className = "2026028MAA12β3",
+            costAmount = 0.0,
+            message = "课消为 0"
+        )
+        val report = TmsMissingReport(
+            days = 3,
+            startDate = "2026-10-22",
+            endDate = "2026-10-24",
+            courses = listOf(ready, blocked),
+            warnings = emptyList(),
+            checkedCourseCount = 2
+        )
+
+        assertEquals(1, report.submittableCount)
+        assertEquals(5, report.totalStudentCount)
+        assertTrue(report.canSubmit)
+    }
+
     private fun tmsMatch(status: AttendanceStatus) = TmsStudentMatch(
         appStudentId = "app-1",
         appName = "学生A",
@@ -298,7 +406,11 @@ class TmsAttendanceMapperTest {
 
     private fun plan(
         matches: List<TmsStudentMatch>,
-        costAmount: Double = 1.0
+        costAmount: Double = 1.0,
+        unmatchedAppStudents: List<com.jf.checkin.data.model.Student> = emptyList(),
+        message: String? = null,
+        forceAllowed: Boolean = false,
+        alreadyPointed: Boolean = false
     ) = TmsCoursePlan(
         className = "2026028MAA12β2",
         classFormat = "β2",
@@ -306,13 +418,14 @@ class TmsAttendanceMapperTest {
         courseId = "course-id",
         startTime = "2026-10-24T07:50:00",
         endTime = "2026-10-24T09:50:00",
-        alreadyPointed = false,
+        alreadyPointed = alreadyPointed,
         matches = matches,
-        unmatchedAppStudents = emptyList(),
+        unmatchedAppStudents = unmatchedAppStudents,
         tmsOnlyStudentNames = emptyList(),
-        message = null,
+        message = message,
         attendanceDetailJson = "{}",
         costAmount = costAmount,
-        unitCode = 2
+        unitCode = 2,
+        forceAllowed = forceAllowed
     )
 }

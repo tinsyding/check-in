@@ -61,10 +61,18 @@ data class TmsCoursePlan(
     val message: String?,
     val attendanceDetailJson: String?,
     val costAmount: Double,
-    val unitCode: Int
+    val unitCode: Int,
+    /**
+     * 只要“本地名单有学员未匹配到校管家名单”这一项阻止提交，就允许强行考勤：
+     * 已匹配的学员照常提交，未匹配的本地学员跳过。
+     */
+    val forceAllowed: Boolean = false
 ) {
     val displayTime: String
         get() = TmsAttendanceMapper.displayTime(startTime, endTime)
+
+    val courseDate: String
+        get() = TmsAttendanceMapper.tmsDate(startTime)
 
     val presentCount: Int
         get() = matches.count {
@@ -91,6 +99,17 @@ data class TmsCoursePlan(
             costAmount > 0.0
 
     /**
+     * 名单对不上时仍可提交：只提交已匹配的学员，未匹配的本地学员忽略。
+     * 课消为 0、完全没有匹配到学员、已点名等情况仍然不允许强行提交。
+     */
+    val canForceSubmit: Boolean
+        get() = courseId != null &&
+            !alreadyPointed &&
+            forceAllowed &&
+            matches.isNotEmpty() &&
+            costAmount > 0.0
+
+    /**
      * 解析本节课的开始日期时间。
      * 优先使用校管家 StartTime，若空则尝试本地课表 classTime。
      */
@@ -113,6 +132,14 @@ data class TmsSyncPreview(
     val submittableCount: Int get() = plans.count { it.canSubmit }
     val canSubmit: Boolean get() = submittableCount > 0
 
+    /** 是否存在“名单对不上但可以强行提交”的课程。 */
+    val forceSubmittableCount: Int get() = plans.count { it.canSubmit || it.canForceSubmit }
+    val canForceSubmit: Boolean get() = plans.any { it.canForceSubmit }
+
+    /** 强行考勤时会跳过、不会提交的本地学员。 */
+    val forceSkippedStudents: List<Student>
+        get() = plans.filter { it.canForceSubmit }.flatMap { it.unmatchedAppStudents }
+
     /**
      * 如果存在尚未开始的课程，返回最早的上课开始时间；
      * 若所有可提交课程均已开始或已过上课时间，则返回 null（表示可立即提交）。
@@ -129,8 +156,55 @@ data class TmsSyncPreview(
 data class TmsCourseResult(
     val className: String,
     val success: Boolean,
-    val message: String
+    val message: String,
+    val date: String = ""
 )
+
+/**
+ * 校管家中尚未点名的一节课。
+ *
+ * “一键考勤”直接按校管家课程学员名单全员出勤，不依赖本地名单匹配，
+ * 因此即使本地 CSV 与校管家名单对不上也能完成考勤。
+ */
+data class TmsMissingCourse(
+    val date: String,
+    val courseId: String,
+    val className: String,
+    val startTime: String,
+    val endTime: String,
+    val studentCount: Int,
+    val attendanceDetailJson: String,
+    val costAmount: Double,
+    val unitCode: Int,
+    val message: String? = null
+) {
+    val displayTime: String
+        get() = TmsAttendanceMapper.displayTime(startTime, endTime)
+
+    val canSubmit: Boolean
+        get() = courseId.isNotBlank() &&
+            message == null &&
+            studentCount > 0 &&
+            costAmount > 0.0
+}
+
+data class TmsMissingReport(
+    val days: Int,
+    val startDate: String,
+    val endDate: String,
+    val courses: List<TmsMissingCourse>,
+    val warnings: List<String>,
+    val checkedCourseCount: Int
+) {
+    val submittableCourses: List<TmsMissingCourse>
+        get() = courses.filter { it.canSubmit }
+
+    val submittableCount: Int get() = submittableCourses.size
+    val canSubmit: Boolean get() = submittableCount > 0
+
+    val totalStudentCount: Int
+        get() = submittableCourses.sumOf { it.studentCount }
+}
 
 /**
  * 校管家自动考勤：登录 TMS、按“班级号+班型”匹配当天课程、读取课程学员，
@@ -264,15 +338,193 @@ class TmsAttendanceService {
 
     suspend fun submit(
         preview: TmsSyncPreview,
-        credentials: TmsCredentials
+        credentials: TmsCredentials,
+        force: Boolean = false
     ): List<TmsCourseResult> = withContext(Dispatchers.IO) {
         val activeSession = ensureSession(credentials)
         val results = mutableListOf<TmsCourseResult>()
         for (plan in preview.plans) {
-            if (!plan.canSubmit) continue
+            val eligible = plan.canSubmit || (force && plan.canForceSubmit)
+            if (!eligible) continue
             results += submitPlan(activeSession, plan)
         }
         results
+    }
+
+    /**
+     * 检查最近 [days] 天（含今天）有哪些本地班级的校管家课程还没有点名。
+     * 只检查 [classNames] 范围内的课程，避免误操作其他老师的班级。
+     */
+    suspend fun checkMissingAttendance(
+        classNames: Collection<String>,
+        days: Int,
+        credentials: TmsCredentials,
+        today: LocalDate = LocalDate.now()
+    ): TmsMissingReport = withContext(Dispatchers.IO) {
+        val allowedKeys = classNames.asSequence()
+            .map { TmsAttendanceMapper.classNameKey(it) }
+            .filter { it.isNotBlank() }
+            .toSet()
+        if (allowedKeys.isEmpty()) {
+            throw IllegalStateException("当前名单没有可检查的班级")
+        }
+
+        val safeDays = days.coerceIn(1, 7)
+        val startDate = today.minusDays((safeDays - 1).toLong())
+        val activeSession = ensureSession(credentials)
+        val courses = queryCourses(
+            activeSession,
+            startDate,
+            today,
+            includeFinished = true
+        )
+
+        val warnings = mutableListOf<String>()
+        val missing = mutableListOf<TmsMissingCourse>()
+        val now = LocalDateTime.now()
+        var consideredCount = 0
+        var matchedClassCourseCount = 0
+
+        for (course in courses) {
+            if (TmsAttendanceMapper.classNameKey(course.className) !in allowedKeys) continue
+            matchedClassCourseCount++
+            // 今天还没开始的课不参与检查，避免把未来课程当成“漏考勤”提前提交。
+            val start = TmsAttendanceMapper.tmsDateTime(course.startTime)
+            if (start != null && start.isAfter(now)) continue
+            consideredCount++
+
+            val everPointed = course.attendanceCount > 0 ||
+                TmsAttendanceMapper.hasAttendanceTime(course.lastAttendTime)
+            if (everPointed) continue
+
+            val detail = fetchAttendance(activeSession, course.id)
+            val tmsStudents = detail.optJSONArray("students") ?: JSONArray()
+            if (tmsStudents.length() == 0) {
+                warnings += "${course.className}（${TmsAttendanceMapper.tmsDate(course.startTime)}）校管家课程中没有学员，已跳过"
+                continue
+            }
+            if (hasExistingRecord(tmsStudents)) {
+                warnings += "${course.className}（${TmsAttendanceMapper.tmsDate(course.startTime)}）已有部分点名/计费记录，已跳过"
+                continue
+            }
+
+            val cost = TmsAttendanceMapper.computeCost(course)
+            missing += TmsMissingCourse(
+                date = TmsAttendanceMapper.tmsDate(course.startTime),
+                courseId = course.id,
+                className = course.className,
+                startTime = course.startTime,
+                endTime = course.endTime,
+                studentCount = tmsStudents.length(),
+                attendanceDetailJson = detail.toString(),
+                costAmount = cost,
+                unitCode = course.unitCode,
+                message = if (cost <= 0.0) "课消为 0，无法一键考勤，请在校管家网页手动处理" else null
+            )
+        }
+
+        if (courses.isEmpty()) {
+            warnings += "校管家在 $startDate ~ $today 没有任何课程，请确认账号或日期是否正确"
+        } else if (matchedClassCourseCount == 0) {
+            warnings += "校管家课程中没有找到当前名单的班级，请确认班级号/班型是否一致"
+        } else if (consideredCount == 0) {
+            warnings += "检查范围内只有尚未开始的课程，今天稍后开始后再检查即可"
+        }
+
+        TmsMissingReport(
+            days = safeDays,
+            startDate = startDate.toString(),
+            endDate = today.toString(),
+            courses = missing.sortedWith(
+                compareBy<TmsMissingCourse> { it.startTime }.thenBy { it.className }
+            ),
+            warnings = warnings,
+            checkedCourseCount = consideredCount
+        )
+    }
+
+    /**
+     * 一键考勤：把报告中每节课的校管家学员全部标记为已出勤并计费。
+     * 完全基于校管家名单，不需要本地名单匹配。
+     */
+    suspend fun submitMissingAttendance(
+        report: TmsMissingReport,
+        credentials: TmsCredentials
+    ): List<TmsCourseResult> = withContext(Dispatchers.IO) {
+        val activeSession = ensureSession(credentials)
+        val results = mutableListOf<TmsCourseResult>()
+        for (course in report.submittableCourses) {
+            results += submitAllPresent(activeSession, course)
+        }
+        results
+    }
+
+    private fun submitAllPresent(
+        session: TmsSession,
+        course: TmsMissingCourse
+    ): TmsCourseResult {
+        return try {
+            val detail = JSONObject(course.attendanceDetailJson)
+            val students = detail.optJSONArray("students") ?: JSONArray()
+            if (students.length() == 0) {
+                return TmsCourseResult(
+                    course.className,
+                    false,
+                    "校管家课程中没有学员",
+                    course.date
+                )
+            }
+
+            val matches = (0 until students.length()).mapNotNull { index ->
+                val student = students.optJSONObject(index) ?: return@mapNotNull null
+                val id = student.optString("ID")
+                if (id.isBlank()) return@mapNotNull null
+                val rawName = student.optString("Name")
+                val (_, name) = TmsAttendanceMapper.studentNumberAndName(rawName)
+                TmsStudentMatch(
+                    appStudentId = id,
+                    appName = name,
+                    appStatus = AttendanceStatus.PRESENT,
+                    tmsStudentId = id,
+                    tmsName = rawName
+                )
+            }
+            if (matches.isEmpty()) {
+                return TmsCourseResult(
+                    course.className,
+                    false,
+                    "校管家课程学员缺少有效学号",
+                    course.date
+                )
+            }
+
+            submitPlan(
+                session,
+                TmsCoursePlan(
+                    className = course.className,
+                    classFormat = "",
+                    classTime = course.displayTime,
+                    courseId = course.courseId,
+                    startTime = course.startTime,
+                    endTime = course.endTime,
+                    alreadyPointed = false,
+                    matches = matches,
+                    unmatchedAppStudents = emptyList(),
+                    tmsOnlyStudentNames = emptyList(),
+                    message = null,
+                    attendanceDetailJson = course.attendanceDetailJson,
+                    costAmount = course.costAmount,
+                    unitCode = course.unitCode
+                )
+            )
+        } catch (e: Exception) {
+            TmsCourseResult(
+                course.className,
+                false,
+                e.localizedMessage ?: "一键考勤失败",
+                course.date
+            )
+        }
     }
 
     private fun emptyPlan(
@@ -359,13 +611,7 @@ class TmsAttendanceService {
         }
 
         // AttendanceCount 可能只统计出勤人数。若已有计费或请假记录，也不能覆盖。
-        val hasExistingRecord = (0 until tmsStudents.length()).any { index ->
-            val tmsStudent = tmsStudents.optJSONObject(index) ?: return@any false
-            tmsStudent.optInt("IsAttend", 0) != 0 ||
-                tmsStudent.optDouble("IsCost", 0.0) > 0.0 ||
-                tmsStudent.optInt("IsAttendStauts", 0) == 1
-        }
-        if (hasExistingRecord) {
+        if (hasExistingRecord(tmsStudents)) {
             return alreadyPointedPlan(
                 course,
                 format,
@@ -425,19 +671,32 @@ class TmsAttendanceService {
                 it.appStatus == AttendanceStatus.LATE ||
                 it.appStatus == AttendanceStatus.ONLINE
         }
-        var message: String? = null
-        if (matches.isEmpty()) {
-            message = "没有匹配到校管家学员"
-        } else if (unmatched.isNotEmpty()) {
-            message = "有 ${unmatched.size} 名学员未匹配到校管家名单，请先核对：${
-                unmatched.joinToString("、") { it.name }
-            }"
-        } else if (cost <= 0.0) {
-            message = "本课程课消数量为 0，无法自动提交，请手动处理"
+        // 名单有差异时也检查一次冲突，避免“强行考勤”把时间冲突的学员直接计费。
+        val conflicts = if (matches.isNotEmpty() && cost > 0.0) {
+            checkConflict(session, course.id, matches.map { it.tmsStudentId })
         } else {
-            val attendIds = matches.map { it.tmsStudentId }
-            val conflicts = checkConflict(session, course.id, attendIds)
-            if (conflicts.isNotEmpty()) {
+            emptyList()
+        }
+        var message: String? = null
+        var forceAllowed = false
+        when {
+            matches.isEmpty() -> {
+                message = "没有匹配到校管家学员"
+            }
+            unmatched.isNotEmpty() -> {
+                message = "有 ${unmatched.size} 名学员未匹配到校管家名单：${
+                    unmatched.joinToString("、") { it.name }
+                }"
+                if (conflicts.isNotEmpty()) {
+                    message += "；同时检测到上课时间冲突：${conflicts.joinToString("、")}"
+                } else if (cost > 0.0) {
+                    forceAllowed = true
+                }
+            }
+            cost <= 0.0 -> {
+                message = "本课程课消数量为 0，无法自动提交，请手动处理"
+            }
+            conflicts.isNotEmpty() -> {
                 message = "检测到上课时间冲突：${conflicts.joinToString("、")}，请在网页端手动确认"
             }
         }
@@ -466,14 +725,24 @@ class TmsAttendanceService {
             message = message,
             attendanceDetailJson = detail.toString(),
             costAmount = cost,
-            unitCode = course.unitCode
+            unitCode = course.unitCode,
+            forceAllowed = forceAllowed
         )
+    }
+
+    private fun hasExistingRecord(tmsStudents: JSONArray): Boolean {
+        return (0 until tmsStudents.length()).any { index ->
+            val tmsStudent = tmsStudents.optJSONObject(index) ?: return@any false
+            tmsStudent.optInt("IsAttend", 0) != 0 ||
+                tmsStudent.optDouble("IsCost", 0.0) > 0.0 ||
+                tmsStudent.optInt("IsAttendStauts", 0) == 1
+        }
     }
 
     private fun submitPlan(session: TmsSession, plan: TmsCoursePlan): TmsCourseResult {
         return try {
             val detailJson = plan.attendanceDetailJson
-                ?: return TmsCourseResult(plan.className, false, "缺少校管家课程数据")
+                ?: return TmsCourseResult(plan.className, false, "缺少校管家课程数据", plan.courseDate)
             val detail = JSONObject(detailJson)
             val students = detail.optJSONArray("students") ?: JSONArray()
             val matchById = plan.matches.associateBy { it.tmsStudentId }
@@ -508,7 +777,7 @@ class TmsAttendanceService {
                     response.optString("ErrorMsg"),
                     "校管家返回错误码 $code"
                 )
-                TmsCourseResult(plan.className, false, message)
+                TmsCourseResult(plan.className, false, message, plan.courseDate)
             } else {
                 val data = response.optJSONObject("Data")
                 val exceptions = namesOf(data?.optJSONArray("ExceptionList"))
@@ -522,12 +791,12 @@ class TmsAttendanceService {
                         append("；审批中未点名：").append(approvals.joinToString("、"))
                     }
                 }
-                TmsCourseResult(plan.className, true, message)
+                TmsCourseResult(plan.className, true, message, plan.courseDate)
             }
         } catch (e: TmsHttpException) {
-            TmsCourseResult(plan.className, false, e.friendlyMessage())
+            TmsCourseResult(plan.className, false, e.friendlyMessage(), plan.courseDate)
         } catch (e: Exception) {
-            TmsCourseResult(plan.className, false, e.localizedMessage ?: "同步失败")
+            TmsCourseResult(plan.className, false, e.localizedMessage ?: "同步失败", plan.courseDate)
         }
     }
 
@@ -671,13 +940,18 @@ class TmsAttendanceService {
         return message.ifBlank { fallback }
     }
 
-    private fun queryCourses(session: TmsSession, date: LocalDate): List<TmsCourseSummary> {
+    private fun queryCourses(
+        session: TmsSession,
+        startDate: LocalDate,
+        endDate: LocalDate = startDate,
+        includeFinished: Boolean = false
+    ): List<TmsCourseSummary> {
         val params = linkedMapOf(
             "Campus" to campusId,
             "PageSize" to "10000",
             "PageIndex" to "1",
-            "startDate" to date.toString(),
-            "endDate" to date.toString(),
+            "startDate" to startDate.toString(),
+            "endDate" to endDate.toString(),
             "finished" to "-1",
             "shiftType" to "7",
             "byterm" to "1",
@@ -686,7 +960,7 @@ class TmsAttendanceService {
             "Forenoon" to "1",
             "Afternoon" to "1",
             "Nightnoon" to "1",
-            "IsContainFinished" to "0",
+            "IsContainFinished" to if (includeFinished) "1" else "0",
             "courseFlag" to ""
         )
         val response = try {
@@ -968,6 +1242,30 @@ internal object TmsAttendanceMapper {
             // 兼容 "HH:mm"、带空格的日期时间，以及 ISO 字符串。
             val match = TIME_PATTERN.find(raw) ?: return ""
             normalizeTime(match.value)
+        }
+    }
+
+    /** 解析校管家课程开始时间，兼容 ISO 与空格分隔格式。 */
+    fun tmsDateTime(raw: String): LocalDateTime? {
+        val value = raw.trim()
+        if (value.isBlank()) return null
+        return try {
+            LocalDateTime.parse(value)
+        } catch (_: Exception) {
+            runCatching { LocalDateTime.parse(value.replace(' ', 'T')) }.getOrNull()
+        }
+    }
+
+    /** 从校管家 StartTime 中提取 yyyy-MM-dd，兼容 ISO、空格分隔和纯日期。 */
+    fun tmsDate(raw: String): String {
+        val value = raw.trim()
+        if (value.length >= 10 && value[4] == '-' && value[7] == '-') {
+            return value.take(10)
+        }
+        return try {
+            LocalDateTime.parse(value).toLocalDate().toString()
+        } catch (_: Exception) {
+            ""
         }
     }
 
