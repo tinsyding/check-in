@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EventBusy
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Videocam
@@ -71,6 +72,7 @@ fun StudentCard(
         AttendanceStatus.PRESENT -> Triple(CardBackgroundPresent, CardBorderPresent, AccentGreen)
         AttendanceStatus.LATE -> Triple(Color(0xFFFEF3C7), Color(0xFFFCD34D), AccentOrange)
         AttendanceStatus.LEAVE -> Triple(Color(0xFFE0E7FF), Color(0xFFA5B4FC), AccentBlue)
+        AttendanceStatus.LEAVE_REPLAY -> Triple(Color(0xFFCCFBF1), Color(0xFF5EEAD4), Color(0xFF0F766E))
         AttendanceStatus.ONLINE -> Triple(CardBackgroundOnline, CardBorderOnline, AccentPurple)
         AttendanceStatus.UNCHECKED -> Triple(CardBackgroundUnchecked, Color(0xFFE2E8F0), Color(0xFF94A3B8))
     }
@@ -163,6 +165,7 @@ fun StudentCard(
                         AttendanceStatus.PRESENT -> AccentGreen
                         AttendanceStatus.LATE -> AccentOrange
                         AttendanceStatus.LEAVE -> AccentBlue
+                        AttendanceStatus.LEAVE_REPLAY -> Color(0xFF0F766E)
                         AttendanceStatus.ONLINE -> AccentPurple
                         AttendanceStatus.UNCHECKED -> Color(0xFFCBD5E1)
                     },
@@ -193,7 +196,8 @@ fun StudentCard(
                             text = when (student.status) {
                                 AttendanceStatus.PRESENT -> "已到"
                                 AttendanceStatus.LATE -> "迟到"
-                                AttendanceStatus.LEAVE -> "请假"
+                                AttendanceStatus.LEAVE -> "请假·无回放"
+                                AttendanceStatus.LEAVE_REPLAY -> "请假·回放"
                                 AttendanceStatus.ONLINE -> if (StudentCsvParser.isOfflineStudent(student)) "转线上 · 免签" else "线上 · 免签"
                                 AttendanceStatus.UNCHECKED -> "未到"
                             },
@@ -228,10 +232,18 @@ fun StudentCard(
                 }
             )
             DropdownMenuItem(
-                text = { Text("请假", color = AccentBlue, fontWeight = FontWeight.SemiBold) },
+                text = { Text("请假（不发回放）", color = AccentBlue, fontWeight = FontWeight.SemiBold) },
                 leadingIcon = { Icon(Icons.Default.EventBusy, contentDescription = null, tint = AccentBlue) },
                 onClick = {
                     onSetStatus(AttendanceStatus.LEAVE)
+                    showMenu = false
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("请假（发回放）", color = Color(0xFF0F766E), fontWeight = FontWeight.SemiBold) },
+                leadingIcon = { Icon(Icons.Default.PlayCircle, contentDescription = null, tint = Color(0xFF0F766E)) },
+                onClick = {
+                    onSetStatus(AttendanceStatus.LEAVE_REPLAY)
                     showMenu = false
                 }
             )

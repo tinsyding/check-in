@@ -23,6 +23,17 @@ class AttendanceStatusTest {
     }
 
     @Test
+    fun testLeaveStatusesAreSplitIntoTwoKinds() {
+        assertEquals("请假（不发回放）", AttendanceStatus.LEAVE.label)
+        assertEquals("请假（发回放）", AttendanceStatus.LEAVE_REPLAY.label)
+        assertEquals("请假·回放", AttendanceStatus.LEAVE_REPLAY.symbol)
+        assertTrue(AttendanceStatus.LEAVE.isLeave())
+        assertTrue(AttendanceStatus.LEAVE_REPLAY.isLeave())
+        assertFalse(AttendanceStatus.LATE.isLeave())
+        assertFalse(AttendanceStatus.PRESENT.isLeave())
+    }
+
+    @Test
     fun testAttendanceRecordOnlineCountDefault() {
         val record = AttendanceRecord(
             id = "test-id",

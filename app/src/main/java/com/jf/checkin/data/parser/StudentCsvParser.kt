@@ -49,7 +49,10 @@ object StudentCsvParser {
                         when (checkInMark) {
                             "√", "对号", "已到", "出勤" -> AttendanceStatus.PRESENT
                             "迟到" -> AttendanceStatus.LATE
-                            "请假" -> AttendanceStatus.LEAVE
+                            "请假", "请假(不发回放)", "请假（不发回放）", "请假·无回放" ->
+                                AttendanceStatus.LEAVE
+                            "请假(发回放)", "请假（发回放）", "请假·回放", "请假(回放)", "请假（回放）" ->
+                                AttendanceStatus.LEAVE_REPLAY
                             "转线上", "线上" -> AttendanceStatus.ONLINE
                             else -> AttendanceStatus.UNCHECKED
                         }

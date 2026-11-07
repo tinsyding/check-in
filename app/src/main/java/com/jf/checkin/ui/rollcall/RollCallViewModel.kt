@@ -941,7 +941,7 @@ class RollCallViewModel(
             totalCount = students.size,
             presentCount = students.count { it.status == AttendanceStatus.PRESENT },
             lateCount = students.count { it.status == AttendanceStatus.LATE },
-            leaveCount = students.count { it.status == AttendanceStatus.LEAVE },
+            leaveCount = students.count { it.status.isLeave() },
             absentCount = students.count { it.status == AttendanceStatus.UNCHECKED },
             onlineCount = students.count { it.status == AttendanceStatus.ONLINE },
             movedOutCount = movedOutCount,

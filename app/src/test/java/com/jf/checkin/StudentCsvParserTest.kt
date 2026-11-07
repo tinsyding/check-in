@@ -49,6 +49,20 @@ class StudentCsvParserTest {
     }
 
     @Test
+    fun testLeaveMarksDistinguishReplay() {
+        val content = "\n\n学号,姓名,班级名称,上课时间,上课形式,签到\n" +
+            "55136,不发回放,2026028MAA12,周六07:50~09:50,β2,请假（不发回放）\n" +
+            "55203,发回放,2026028MAA12,周六07:50~09:50,β2,请假（发回放）\n" +
+            "55204,旧标记,2026028MAA12,周六07:50~09:50,β2,请假\n"
+        val students = StudentCsvParser.parse(content)
+
+        assertEquals(AttendanceStatus.LEAVE, students[0].status)
+        assertEquals(AttendanceStatus.LEAVE_REPLAY, students[1].status)
+        // 兼容旧名单里的“请假”，默认按不发回放处理
+        assertEquals(AttendanceStatus.LEAVE, students[2].status)
+    }
+
+    @Test
     fun testManualStudentIsTreatedAsOffline() {
         val manual = Student(
             studentId = "99999",

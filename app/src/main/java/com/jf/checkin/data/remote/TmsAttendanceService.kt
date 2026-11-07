@@ -83,7 +83,7 @@ data class TmsCoursePlan(
 
     val lateCount: Int get() = matches.count { it.appStatus == AttendanceStatus.LATE }
 
-    val leaveCount: Int get() = matches.count { it.appStatus == AttendanceStatus.LEAVE }
+    val leaveCount: Int get() = matches.count { it.appStatus.isLeave() }
 
     val absentCount: Int get() = matches.count { it.appStatus == AttendanceStatus.UNCHECKED }
 
@@ -807,6 +807,7 @@ class TmsAttendanceService {
             AttendanceStatus.LATE,
             AttendanceStatus.ONLINE,
             AttendanceStatus.LEAVE,
+            AttendanceStatus.LEAVE_REPLAY,
             AttendanceStatus.UNCHECKED -> {
                 student.put("IsAttend", 1)
                 student.put("IsCost", cost)

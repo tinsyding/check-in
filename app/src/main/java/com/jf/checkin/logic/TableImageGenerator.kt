@@ -175,6 +175,10 @@ object TableImageGenerator {
                         statusText = "请假"
                         statusColor = Color.parseColor("#3B82F6") // 科技蓝
                     }
+                    AttendanceStatus.LEAVE_REPLAY -> {
+                        statusText = "请假·回放"
+                        statusColor = Color.parseColor("#0F766E") // 深青色，区别于不发回放
+                    }
                     AttendanceStatus.ONLINE -> {
                         statusText = if (StudentCsvParser.isOfflineStudent(student)) "转线上" else "线上"
                         statusColor = Color.parseColor("#8B5CF6") // 优雅紫
