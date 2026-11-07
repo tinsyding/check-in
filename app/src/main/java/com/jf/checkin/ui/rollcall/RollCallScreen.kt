@@ -1628,7 +1628,7 @@ private fun TmsPreviewDialog(
                 }
 
                 Text(
-                    text = "规则：α1/β1/β2/β3 均会同步；所有已匹配学员（含未到、请假）统一按出勤提交并计费；已点名课程自动跳过；不会发送微信/短信通知。",
+                    text = "规则：α1/β1/β2/β3 均会同步；请假（不发回放）按事假提交且不计费，其余已匹配学员按出勤提交并计费；已点名课程自动跳过；不会发送微信/短信通知。",
                     fontSize = 12.sp,
                     color = Color(0xFF64748B)
                 )
@@ -1775,7 +1775,7 @@ private fun TmsPreviewDialog(
                         )
                     }
                     Text(
-                        text = "校管家多出的学员保持原状；已匹配学员统一按出勤提交并计费，且不会发送微信/短信通知。",
+                        text = "校管家多出的学员保持原状；请假（不发回放）按事假提交且不计费，其余已匹配学员按出勤提交并计费，且不会发送微信/短信通知。",
                         fontSize = 12.sp,
                         color = Color(0xFF64748B)
                     )
@@ -2155,12 +2155,12 @@ private fun TmsPlanCard(plan: TmsCoursePlan) {
                 }
             } else {
                 Text(
-                    text = "已匹配 ${plan.matches.size} 人：本地已到 ${plan.presentCount}（含迟到 ${plan.lateCount}） / 请假 ${plan.leaveCount} / 未到 ${plan.absentCount}",
+                    text = "已匹配 ${plan.matches.size} 人：本地已到 ${plan.presentCount}（含迟到 ${plan.lateCount}） / 请假 ${plan.leaveCount}（不发回放 ${plan.leaveNoReplayCount}、发回放 ${plan.leaveReplayCount}） / 未到 ${plan.absentCount}",
                     fontSize = 12.sp,
                     color = Color(0xFF334155)
                 )
                 Text(
-                    text = "提交时全部按出勤并计费",
+                    text = "请假（不发回放）按事假提交且不计费；其余学员按出勤并计费",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Medium,
                     color = Color(0xFF15803D)

@@ -85,11 +85,18 @@ data class TmsCoursePlan(
 
     val leaveCount: Int get() = matches.count { it.appStatus.isLeave() }
 
+    /** 请假（不发回放）：同步到校管家时按「事假」处理，不计课消。 */
+    val leaveNoReplayCount: Int get() = matches.count { it.appStatus == AttendanceStatus.LEAVE }
+
+    /** 请假（发回放）：同步到校管家时按正常出勤处理并计费。 */
+    val leaveReplayCount: Int get() = matches.count { it.appStatus == AttendanceStatus.LEAVE_REPLAY }
+
     val absentCount: Int get() = matches.count { it.appStatus == AttendanceStatus.UNCHECKED }
 
     /**
      * 只要课程存在、未点过名、学员全部匹配且课消有效就可以提交。
-     * 未到和请假也会按出勤提交并计费，因此课消金额必须大于 0。
+     * 未到和请假（发回放）按出勤提交并计费，请假（不发回放）按事假提交，
+     * 但课程本身仍需有有效课消，因此课消金额必须大于 0。
      */
     val canSubmit: Boolean
         get() = courseId != null &&
@@ -233,7 +240,8 @@ class TmsAttendanceService {
         }
 
         // α1/β1 线上课程和 β2/β3 线下课程都同步到校管家。
-        // 应用内线上学员默认是 ONLINE，同步时会按“已到并计费”处理；未到和请假学员同样按出勤计费提交。
+        // 应用内线上学员默认是 ONLINE，同步时会按“已到并计费”处理；
+        // 未到和请假（发回放）同样按出勤计费，请假（不发回放）按校管家“事假”提交。
         val syncGroups = classStudents
             .filter {
                 it.classFormat != MANUAL_FORMAT &&
@@ -610,7 +618,7 @@ class TmsAttendanceService {
             )
         }
 
-        // AttendanceCount 可能只统计出勤人数。若已有计费或请假记录，也不能覆盖。
+        // AttendanceCount 可能只统计出勤人数。若已有计费或事假/请假记录，也不能覆盖。
         if (hasExistingRecord(tmsStudents)) {
             return alreadyPointedPlan(
                 course,
@@ -702,7 +710,7 @@ class TmsAttendanceService {
         }
 
         if (matches.isNotEmpty() && presentMatches.isEmpty()) {
-            warnings += "${course.className} 本次没有已到学生，未到/请假学员也将按出勤提交并计费"
+            warnings += "${course.className} 本次没有已到学生，未到学员和请假（发回放）也将按出勤提交并计费；请假（不发回放）将按事假提交且不计费"
         }
 
         if (tmsOnlyNames.isNotEmpty()) {
@@ -746,11 +754,13 @@ class TmsAttendanceService {
             val detail = JSONObject(detailJson)
             val students = detail.optJSONArray("students") ?: JSONArray()
             val matchById = plan.matches.associateBy { it.tmsStudentId }
+            // 若课程详情里带有校管家的缺席原因列表，优先取“事假”的真实 ID。
+            val absentCauseId = TmsAttendanceMapper.findAbsentCauseId(detail)
 
             for (index in 0 until students.length()) {
                 val tmsStudent = students.optJSONObject(index) ?: continue
                 val match = matchById[tmsStudent.optString("ID")] ?: continue
-                applyStatus(tmsStudent, match.appStatus, plan.costAmount)
+                applyStatus(tmsStudent, match.appStatus, plan.costAmount, absentCauseId)
             }
 
             val cleanedStudents = JSONArray()
@@ -800,22 +810,21 @@ class TmsAttendanceService {
         }
     }
 
-    private fun applyStatus(student: JSONObject, status: AttendanceStatus, cost: Double) {
-        // 校管家同步统一按出勤处理：未到、请假也提交为已出勤并计费。
-        when (status) {
-            AttendanceStatus.PRESENT,
-            AttendanceStatus.LATE,
-            AttendanceStatus.ONLINE,
-            AttendanceStatus.LEAVE,
-            AttendanceStatus.LEAVE_REPLAY,
-            AttendanceStatus.UNCHECKED -> {
-                student.put("IsAttend", 1)
-                student.put("IsCost", cost)
-                student.put("IsAttendStauts", 0)
-                student.put("AbsentCauseID", "")
-                student.put("AbsentCauseName", "")
-            }
-        }
+    private fun applyStatus(
+        student: JSONObject,
+        status: AttendanceStatus,
+        cost: Double,
+        absentCauseId: String
+    ) {
+        // 请假（不发回放）按校管家“事假”提交且不计费；
+        // 其余状态（含请假发回放）仍按出勤并计费。
+        val fields = TmsAttendanceMapper.attendanceFields(status, cost, absentCauseId)
+        student.put("IsAttend", fields.isAttend)
+        student.put("IsCost", fields.isCost)
+        student.put("IsAttendStauts", fields.attendStatus)
+        student.put("AbsentCauseID", fields.absentCauseId)
+        student.put("AbsentCauseName", fields.absentCauseName)
+
         // 按天计费已经扣过费的学员，校管家网页端会把 IsCost 置 0，这里保持一致。
         if (student.optInt("IsDayFeeCost", 0) == 1) {
             student.put("IsCost", 0)
@@ -1303,6 +1312,78 @@ internal object TmsAttendanceMapper {
             course.isDynamicConsume -> course.consumeAmount
             else -> 1.0
         }
+    }
+
+    /**
+     * 校管家 SetAttendance 中单个学员的考勤字段。
+     *
+     * 请假（不发回放）对应校管家“事假”：未出勤、不计课消、IsAttendStauts=1；
+     * 请假（发回放）及其余状态仍按正常出勤并计费。
+     */
+    data class AttendanceFields(
+        val isAttend: Int,
+        val isCost: Double,
+        val attendStatus: Int,
+        val absentCauseId: String,
+        val absentCauseName: String
+    )
+
+    const val ABSENT_CAUSE_NAME = "事假"
+
+    fun attendanceFields(
+        status: AttendanceStatus,
+        cost: Double,
+        absentCauseId: String = ""
+    ): AttendanceFields = when (status) {
+        AttendanceStatus.LEAVE -> AttendanceFields(
+            isAttend = 0,
+            isCost = 0.0,
+            attendStatus = 1,
+            absentCauseId = absentCauseId,
+            absentCauseName = ABSENT_CAUSE_NAME
+        )
+        else -> AttendanceFields(
+            isAttend = 1,
+            isCost = cost,
+            attendStatus = 0,
+            absentCauseId = "",
+            absentCauseName = ""
+        )
+    }
+
+    /**
+     * 从校管家课程详情中查找“事假”的原因 ID。
+     * 不同校区的字段名可能不同，这里递归查找原因列表；找不到时返回空字符串，
+     * 仍会提交 AbsentCauseName=事假。
+     */
+    fun findAbsentCauseId(detail: JSONObject?): String {
+        if (detail == null) return ""
+        return findCauseId(detail, ABSENT_CAUSE_NAME).orEmpty()
+    }
+
+    private fun findCauseId(value: Any?, causeName: String): String? {
+        when (value) {
+            is JSONArray -> {
+                for (index in 0 until value.length()) {
+                    findCauseId(value.opt(index), causeName)?.let { return it }
+                }
+            }
+            is JSONObject -> {
+                val name = value.optString("Name")
+                    .ifBlank { value.optString("AbsentCauseName") }
+                if (name.contains(causeName)) {
+                    val id = value.optString("AbsentCauseID")
+                        .ifBlank { value.optString("ID") }
+                    if (id.isNotBlank()) return id
+                }
+                for (key in value.keys()) {
+                    // 学员节点里的 ID 是学生 ID，不能当作缺席原因 ID。
+                    if (key == "students") continue
+                    findCauseId(value.opt(key), causeName)?.let { return it }
+                }
+            }
+        }
+        return null
     }
 
     fun normalizeTime(raw: String): String {

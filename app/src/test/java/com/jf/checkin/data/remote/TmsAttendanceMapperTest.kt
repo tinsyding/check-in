@@ -190,6 +190,66 @@ class TmsAttendanceMapperTest {
     }
 
     @Test
+    fun leaveWithoutReplayIsSubmittedAsPersonalLeaveWithoutCost() {
+        val fields = TmsAttendanceMapper.attendanceFields(
+            status = AttendanceStatus.LEAVE,
+            cost = 1.5,
+            absentCauseId = "cause-1"
+        )
+
+        assertEquals(0, fields.isAttend)
+        assertEquals(0.0, fields.isCost, 0.00001)
+        assertEquals(1, fields.attendStatus)
+        assertEquals("cause-1", fields.absentCauseId)
+        assertEquals("事假", fields.absentCauseName)
+    }
+
+    @Test
+    fun leaveWithReplayIsSubmittedAsNormalAttendanceWithCost() {
+        val fields = TmsAttendanceMapper.attendanceFields(
+            status = AttendanceStatus.LEAVE_REPLAY,
+            cost = 1.5
+        )
+
+        assertEquals(1, fields.isAttend)
+        assertEquals(1.5, fields.isCost, 0.00001)
+        assertEquals(0, fields.attendStatus)
+        assertEquals("", fields.absentCauseId)
+        assertEquals("", fields.absentCauseName)
+    }
+
+    @Test
+    fun otherStatusesStillUseAttendanceAndCost() {
+        val statuses = listOf(
+            AttendanceStatus.PRESENT,
+            AttendanceStatus.LATE,
+            AttendanceStatus.UNCHECKED,
+            AttendanceStatus.ONLINE
+        )
+        for (status in statuses) {
+            val fields = TmsAttendanceMapper.attendanceFields(status, 2.0)
+            assertEquals(1, fields.isAttend)
+            assertEquals(2.0, fields.isCost, 0.00001)
+            assertEquals(0, fields.attendStatus)
+        }
+    }
+
+    @Test
+    fun planSplitsLeaveCounts() {
+        val plan = plan(
+            matches = listOf(
+                tmsMatch(AttendanceStatus.LEAVE),
+                tmsMatch(AttendanceStatus.LEAVE_REPLAY),
+                tmsMatch(AttendanceStatus.PRESENT)
+            )
+        )
+
+        assertEquals(2, plan.leaveCount)
+        assertEquals(1, plan.leaveNoReplayCount)
+        assertEquals(1, plan.leaveReplayCount)
+    }
+
+    @Test
     fun absentPlanStillRequiresPositiveCost() {
         val plan = plan(
             matches = listOf(tmsMatch(AttendanceStatus.UNCHECKED)),
