@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">班级点名签到</string>
+    <string name="zip_share_label">图片打包</string>
 </resources>

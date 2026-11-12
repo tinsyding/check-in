@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <cache-path name="export_images" path="attendance_exports/" />
+    <cache-path name="zip_exports" path="zip_exports/" />
     <files-path name="internal_files" path="." />
 </paths>

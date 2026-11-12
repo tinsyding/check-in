@@ -2,6 +2,7 @@ package com.jf.checkin.ui.rollcall
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.widget.Toast
@@ -43,6 +44,7 @@ import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.DeleteSweep
@@ -101,6 +103,7 @@ import com.jf.checkin.data.remote.TmsMissingCourse
 import com.jf.checkin.data.remote.TmsMissingReport
 import com.jf.checkin.data.remote.TmsSyncPreview
 import com.jf.checkin.logic.NameplateFontStyle
+import com.jf.checkin.ui.zip.ZipActivity
 import com.jf.checkin.ui.theme.Danger
 import com.jf.checkin.ui.theme.Hairline
 import com.jf.checkin.ui.theme.InkOnDark
@@ -299,6 +302,20 @@ fun RollCallScreen(
                             onClick = {
                                 showTopBarMenu = false
                                 onNavigateToHistory()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("图片打包") },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.FolderZip,
+                                    contentDescription = null,
+                                    tint = InkSecondary
+                                )
+                            },
+                            onClick = {
+                                showTopBarMenu = false
+                                context.startActivity(Intent(context, ZipActivity::class.java))
                             }
                         )
                         DropdownMenuItem(

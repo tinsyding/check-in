@@ -21,6 +21,7 @@ class UserPrefRepository(context: Context) {
         private const val KEY_LAST_CSV_CONTENT = "jf_last_csv_content"
         private const val KEY_LAST_IMPORT_TIME = "jf_last_import_time"
         private const val KEY_TEACHER_NAME = "jf_teacher_name"
+        private const val KEY_ZIP_DEFAULT_NAME = "jf_zip_default_name"
         private const val KEY_PRINTER_IP = "jf_printer_ip"
         private const val KEY_PRINTER_PORT = "jf_printer_port"
         private const val KEY_PRINTER_SIMPLEX = "jf_printer_simplex"
@@ -101,6 +102,11 @@ class UserPrefRepository(context: Context) {
     var teacherName: String
         get() = prefs.getString(KEY_TEACHER_NAME, "") ?: ""
         set(value) = prefs.edit().putString(KEY_TEACHER_NAME, value).apply()
+
+    /** 图片打包默认姓名；为空时回退到 [teacherName]。 */
+    var zipDefaultName: String
+        get() = prefs.getString(KEY_ZIP_DEFAULT_NAME, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_ZIP_DEFAULT_NAME, value).apply()
 
     var username: String
         get() = prefs.getString(KEY_USERNAME, "") ?: ""
