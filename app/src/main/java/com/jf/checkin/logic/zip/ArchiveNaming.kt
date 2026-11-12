@@ -26,5 +26,25 @@ fun sanitizeName(raw: String): String {
 fun archiveFileName(prefix: String, rawName: String): String =
     "$prefix-${sanitizeName(rawName)}.zip"
 
+/**
+ * 完整自定义压缩包名：
+ * - 允许直接输入带 .zip 的完整文件名，也允许省略
+ * - 非法字符替换为下划线，末尾统一补一个 .zip
+ */
+fun customArchiveFileName(raw: String): String {
+    val cleaned = raw.trim()
+        .replace(illegalChars, "_")
+        .trim(' ', '.')
+        .take(80)
+        .trim(' ', '.')
+
+    var base = cleaned
+    while (base.endsWith(".zip", ignoreCase = true)) {
+        base = base.dropLast(4).trim(' ', '.')
+    }
+    if (base.isBlank()) base = "未命名"
+    return "$base.zip"
+}
+
 fun imageEntryName(prefix: String, index: Int, extension: String): String =
     "$prefix-${index.toString().padStart(2, '0')}.$extension"

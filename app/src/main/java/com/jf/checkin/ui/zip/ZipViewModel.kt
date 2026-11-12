@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.jf.checkin.CheckInApplication
 import com.jf.checkin.logic.zip.ImageZipBuilder
 import com.jf.checkin.logic.zip.archiveFileName
+import com.jf.checkin.logic.zip.customArchiveFileName
 import com.jf.checkin.logic.zip.datePrefix
 import com.jf.checkin.util.imageUris
 import kotlinx.coroutines.CancellationException
@@ -44,6 +45,8 @@ data class ZipUiState(
     val nameEdited: Boolean = false,
     val defaultName: String = "",
     val prefix: String = datePrefix(),
+    val customNameEnabled: Boolean = false,
+    val customName: String = "",
     val build: BuildState = BuildState.Idle,
     val message: String? = null,
 )
@@ -83,6 +86,8 @@ class ZipViewModel(application: Application) : AndroidViewModel(application) {
                 uris = limited,
                 name = current.defaultName,
                 nameEdited = false,
+                customNameEnabled = false,
+                customName = "",
                 build = BuildState.Idle,
                 message = if (incoming.size > MAX_ZIP_IMAGES) {
                     "最多打包 $MAX_ZIP_IMAGES 张图片，已保留前 $MAX_ZIP_IMAGES 张"
@@ -146,12 +151,44 @@ class ZipViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setName(value: String) {
         _state.update { current ->
-            current.copy(name = value.take(24), nameEdited = true)
+            current.copy(
+                name = value.take(24),
+                nameEdited = true,
+                build = if (current.build is BuildState.Ready) BuildState.Idle else current.build,
+            )
         }
         saveJob?.cancel()
         saveJob = viewModelScope.launch {
             delay(300)
             prefs.zipDefaultName = _state.value.name.trim()
+        }
+    }
+
+    /** 切换到完整自定义压缩包名；开启时用当前自动命名预填，方便直接改。 */
+    fun setCustomNameEnabled(enabled: Boolean) {
+        _state.update { current ->
+            if (enabled == current.customNameEnabled) {
+                current
+            } else {
+                current.copy(
+                    customNameEnabled = enabled,
+                    customName = if (enabled) {
+                        archiveFileName(current.prefix, current.name).removeSuffix(".zip")
+                    } else {
+                        current.customName
+                    },
+                    build = if (current.build is BuildState.Ready) BuildState.Idle else current.build,
+                )
+            }
+        }
+    }
+
+    fun setCustomName(value: String) {
+        _state.update { current ->
+            current.copy(
+                customName = value.take(80),
+                build = if (current.build is BuildState.Ready) BuildState.Idle else current.build,
+            )
         }
     }
 
@@ -165,7 +202,11 @@ class ZipViewModel(application: Application) : AndroidViewModel(application) {
 
         buildJob?.cancel()
         val prefix = datePrefix()
-        val fileName = archiveFileName(prefix, snapshot.name)
+        val fileName = if (snapshot.customNameEnabled) {
+            customArchiveFileName(snapshot.customName)
+        } else {
+            archiveFileName(prefix, snapshot.name)
+        }
 
         saveJob?.cancel()
         prefs.zipDefaultName = snapshot.name.trim()

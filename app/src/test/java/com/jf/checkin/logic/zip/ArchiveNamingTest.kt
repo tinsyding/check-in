@@ -43,4 +43,24 @@ class ArchiveNamingTest {
         assertEquals("26.11.12-12.png", imageEntryName("26.11.12", 12, "png"))
         assertEquals("26.11.12-100.webp", imageEntryName("26.11.12", 100, "webp"))
     }
+
+    @Test
+    fun customArchiveFileName_acceptsFullNameWithOrWithoutZip() {
+        assertEquals("家长会照片.zip", customArchiveFileName("家长会照片"))
+        assertEquals("家长会照片.zip", customArchiveFileName("家长会照片.zip"))
+        assertEquals("家长会照片.zip", customArchiveFileName("家长会照片.ZIP"))
+        assertEquals("家长会照片.zip", customArchiveFileName("  .家长会照片.zip.  "))
+    }
+
+    @Test
+    fun customArchiveFileName_doesNotDuplicateZipSuffix() {
+        assertEquals("final.zip", customArchiveFileName("final.zip.zip"))
+    }
+
+    @Test
+    fun customArchiveFileName_sanitizesAndFallsBack() {
+        assertEquals("a_b_c.zip", customArchiveFileName("a/b:c"))
+        assertEquals("未命名.zip", customArchiveFileName("   "))
+        assertEquals("未命名.zip", customArchiveFileName("..."))
+    }
 }

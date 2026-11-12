@@ -37,6 +37,8 @@ class ZipActivity : ComponentActivity() {
                     onRemoveUri = viewModel::removeUri,
                     onClearUris = viewModel::clearUris,
                     onNameChange = viewModel::setName,
+                    onCustomNameChange = viewModel::setCustomName,
+                    onToggleCustomName = viewModel::setCustomNameEnabled,
                     onGenerate = viewModel::generate,
                     onBack = { finish() },
                     onMessageShown = viewModel::dismissMessage,

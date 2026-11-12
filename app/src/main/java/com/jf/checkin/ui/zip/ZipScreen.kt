@@ -99,6 +99,8 @@ fun ZipScreen(
     onRemoveUri: (Uri) -> Unit,
     onClearUris: () -> Unit,
     onNameChange: (String) -> Unit,
+    onCustomNameChange: (String) -> Unit,
+    onToggleCustomName: (Boolean) -> Unit,
     onGenerate: () -> Unit,
     onBack: () -> Unit,
     onMessageShown: () -> Unit,
@@ -165,7 +167,11 @@ fun ZipScreen(
                 ArchiveCard(
                     prefix = state.prefix,
                     name = state.name,
+                    customNameEnabled = state.customNameEnabled,
+                    customName = state.customName,
                     onNameChange = onNameChange,
+                    onCustomNameChange = onCustomNameChange,
+                    onToggleCustomName = onToggleCustomName,
                 )
 
                 SectionHeader(
@@ -223,7 +229,11 @@ fun ZipScreen(
 private fun ArchiveCard(
     prefix: String,
     name: String,
+    customNameEnabled: Boolean,
+    customName: String,
     onNameChange: (String) -> Unit,
+    onCustomNameChange: (String) -> Unit,
+    onToggleCustomName: (Boolean) -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -235,31 +245,59 @@ private fun ArchiveCard(
         Column(
             modifier = Modifier.padding(horizontal = Spacing.Xl, vertical = Spacing.Xl),
         ) {
-            Text(
-                text = "压缩包",
-                style = MaterialTheme.typography.labelMedium,
-                color = InkTertiary,
-            )
-            Spacer(modifier = Modifier.height(Spacing.Md))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                DateStamp(prefix)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Text(
-                    text = "-",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = InkSecondary,
-                    modifier = Modifier.padding(horizontal = Spacing.Xs),
-                )
-                NameField(
-                    name = name,
-                    onNameChange = onNameChange,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    text = ".zip",
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = "压缩包",
+                    style = MaterialTheme.typography.labelMedium,
                     color = InkTertiary,
-                    fontFamily = FontFamily.Monospace,
                 )
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    text = if (customNameEnabled) "恢复自动命名" else "自定义",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = InkSecondary,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(Radii.Chip))
+                        .clickable { onToggleCustomName(!customNameEnabled) }
+                        .padding(horizontal = Spacing.Sm, vertical = Spacing.Xs),
+                )
+            }
+            Spacer(modifier = Modifier.height(Spacing.Md))
+            if (customNameEnabled) {
+                CustomNameField(
+                    name = customName,
+                    onNameChange = onCustomNameChange,
+                )
+                Spacer(modifier = Modifier.height(Spacing.Sm))
+                Text(
+                    text = "可输入任意文件名，.zip 会自动补上",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = InkTertiary,
+                )
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    DateStamp(prefix)
+                    Text(
+                        text = "-",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = InkSecondary,
+                        modifier = Modifier.padding(horizontal = Spacing.Xs),
+                    )
+                    NameField(
+                        name = name,
+                        onNameChange = onNameChange,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = ".zip",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = InkTertiary,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
             }
         }
     }
@@ -323,6 +361,57 @@ private fun NameField(
                 fontFamily = FontFamily.SansSerif,
                 fontWeight = FontWeight.Medium,
                 fontSize = 20.sp,
+                color = InkPrimary,
+            ),
+            cursorBrush = SolidColor(InkPrimary),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { focused = it.isFocused },
+        )
+    }
+}
+
+@Composable
+private fun CustomNameField(
+    name: String,
+    onNameChange: (String) -> Unit,
+) {
+    val focusManager = LocalFocusManager.current
+    var focused by remember { mutableStateOf(false) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .drawBehind {
+                val y = size.height - 1.dp.toPx()
+                drawLine(
+                    color = if (focused) InkPrimary.copy(alpha = 0.6f) else Hairline,
+                    start = Offset(0f, y),
+                    end = Offset(size.width, y),
+                    strokeWidth = 1.dp.toPx(),
+                )
+            }
+            .padding(bottom = Spacing.Xs),
+    ) {
+        if (name.isEmpty() && !focused) {
+            Text(
+                text = "完整文件名",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Medium,
+                color = InkTertiary.copy(alpha = 0.7f),
+                modifier = Modifier.align(Alignment.CenterStart),
+            )
+        }
+        BasicTextField(
+            value = name,
+            onValueChange = onNameChange,
+            singleLine = true,
+            textStyle = TextStyle(
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Medium,
+                fontSize = 18.sp,
                 color = InkPrimary,
             ),
             cursorBrush = SolidColor(InkPrimary),
@@ -567,7 +656,8 @@ private fun BottomAction(
                 else -> {
                     Button(
                         onClick = onGenerate,
-                        enabled = state.uris.isNotEmpty(),
+                        enabled = state.uris.isNotEmpty() &&
+                            (!state.customNameEnabled || state.customName.isNotBlank()),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(48.dp),
