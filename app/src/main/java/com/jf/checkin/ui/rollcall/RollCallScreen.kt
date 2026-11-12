@@ -151,6 +151,7 @@ fun RollCallScreen(
     val tmsSyncState by viewModel.tmsSyncState.collectAsState()
     val tmsCheckState by viewModel.tmsCheckState.collectAsState()
     val scheduledSync by viewModel.scheduledSync.collectAsState()
+    val csvImportState by viewModel.csvImportState.collectAsState()
     val movedOutOfCurrent = movedStudents.filter { it.originalClassCode == selectedClassCode }
 
     var showNameplateDialog by remember { mutableStateOf(false) }
@@ -205,6 +206,32 @@ fun RollCallScreen(
 
     LaunchedEffect(Unit) {
         viewModel.reloadSettings()
+    }
+
+    // 自动下载 CSV：成功提示人数，失败回退到网页版手动导出
+    LaunchedEffect(csvImportState) {
+        when (val result = csvImportState) {
+            is CsvImportState.Success -> {
+                Toast.makeText(
+                    context,
+                    "名单已更新：线下 ${result.offlineCount} 人，线上免签 ${result.onlineCount} 人",
+                    Toast.LENGTH_LONG
+                ).show()
+                viewModel.clearCsvImportState()
+            }
+
+            is CsvImportState.Error -> {
+                Toast.makeText(
+                    context,
+                    "自动下载失败：${result.message}，已打开网页版",
+                    Toast.LENGTH_LONG
+                ).show()
+                viewModel.clearCsvImportState()
+                onNavigateToBrowser()
+            }
+
+            else -> Unit
+        }
     }
 
     fun triggerExportWithTeacherCheck(action: () -> Unit) {
@@ -302,7 +329,11 @@ fun RollCallScreen(
                             },
                             onClick = {
                                 showTopBarMenu = false
-                                onNavigateToBrowser()
+                                if (viewModel.hasJfCredentials()) {
+                                    viewModel.autoImportCsvFromJf()
+                                } else {
+                                    onNavigateToBrowser()
+                                }
                             }
                         )
                         DropdownMenuItem(
@@ -532,6 +563,14 @@ fun RollCallScreen(
             onNavigateToSettings()
         }
     )
+
+    // 自动下载名单时的全屏提示
+    if (csvImportState is CsvImportState.Loading) {
+        TmsBusyDialog(
+            title = "正在下载最新名单",
+            message = "正在登录 JF 系统并获取 CSV，请稍候…"
+        )
+    }
 
     // 点击预约考勤条弹出的详情与取消弹窗
     if (showScheduledDetailDialog && scheduledSync != null) {

@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import com.jf.checkin.data.model.AttendanceRecord
 import com.jf.checkin.data.model.AttendanceStatus
 import com.jf.checkin.data.model.Student
+import com.jf.checkin.data.parser.StudentCsvParser
+import com.jf.checkin.data.remote.JfCsvClient
 import com.jf.checkin.data.remote.TmsAttendanceService
 import com.jf.checkin.data.remote.TmsAttendanceMapper
 import com.jf.checkin.data.remote.TmsCourseResult
@@ -22,6 +24,7 @@ import com.jf.checkin.logic.TimeMatcher
 import com.jf.checkin.logic.TmsReminderPlanner
 import com.jf.checkin.logic.TmsScheduledSyncScheduler
 import com.jf.checkin.util.ShareUtil
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -60,6 +63,13 @@ sealed interface TmsCheckState {
     data object Submitting : TmsCheckState
     data class Success(val results: List<TmsCourseResult>) : TmsCheckState
     data class Error(val message: String, val needsSettings: Boolean = false) : TmsCheckState
+}
+
+sealed interface CsvImportState {
+    data object Idle : CsvImportState
+    data object Loading : CsvImportState
+    data class Success(val offlineCount: Int, val onlineCount: Int) : CsvImportState
+    data class Error(val message: String) : CsvImportState
 }
 
 data class ClassInfo(
@@ -120,6 +130,9 @@ class RollCallViewModel(
 
     private val _scheduledSync = MutableStateFlow<ScheduledTmsSync?>(null)
     val scheduledSync: StateFlow<ScheduledTmsSync?> = _scheduledSync.asStateFlow()
+
+    private val _csvImportState = MutableStateFlow<CsvImportState>(CsvImportState.Idle)
+    val csvImportState: StateFlow<CsvImportState> = _csvImportState.asStateFlow()
 
     fun refreshScheduledSync() {
         val code = _selectedClassCode.value
@@ -543,6 +556,48 @@ class RollCallViewModel(
     }
 
     fun hasTmsCredentials(): Boolean = prefRepository.hasTmsCredentials()
+
+    fun hasJfCredentials(): Boolean =
+        prefRepository.username.isNotBlank() && prefRepository.password.isNotBlank()
+
+    /**
+     * 配置过网页账号密码时，直接登录 JF 系统并下载 all_students.csv。
+     * 失败后由界面回退到网页版，仍可手动导出。
+     */
+    fun autoImportCsvFromJf() {
+        if (_csvImportState.value is CsvImportState.Loading) return
+
+        val user = prefRepository.username
+        val pass = prefRepository.password
+        if (user.isBlank() || pass.isBlank()) {
+            _csvImportState.value = CsvImportState.Error("未配置网页账号密码")
+            return
+        }
+
+        viewModelScope.launch {
+            _csvImportState.value = CsvImportState.Loading
+            try {
+                val csv = JfCsvClient.downloadCsv(user, pass)
+                studentRepository.loadFromCsv(csv)
+                val imported = studentRepository.students.value
+                val offline = imported.count { StudentCsvParser.isOfflineStudent(it) }
+                _csvImportState.value = CsvImportState.Success(
+                    offlineCount = offline,
+                    onlineCount = imported.size - offline
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _csvImportState.value = CsvImportState.Error(
+                    error.message?.takeIf { it.isNotBlank() } ?: "未知错误"
+                )
+            }
+        }
+    }
+
+    fun clearCsvImportState() {
+        _csvImportState.value = CsvImportState.Idle
+    }
 
     /** 分享长图后是否需要提示同步校管家：当前班今天还有班型没有同步记录。 */
     fun shouldPromptTmsSync(): Boolean {

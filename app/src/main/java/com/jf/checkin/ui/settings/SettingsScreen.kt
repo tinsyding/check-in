@@ -259,7 +259,7 @@ fun SettingsScreen(
                         color = InkPrimary
                     )
                     Text(
-                        text = "保存在手机本地，内置浏览器打开时会自动填入账号和密码。",
+                        text = "保存在手机本地。配置后，点名页「打开网站下载名单」会直接登录并导入最新 CSV；自动下载失败时才打开内置浏览器手动操作。",
                         style = MaterialTheme.typography.bodySmall,
                         color = InkTertiary
                     )
