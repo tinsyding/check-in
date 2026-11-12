@@ -679,6 +679,11 @@ fun SettingsScreen(
                 }
             }
 
+            // ── 错题快速转换 ───────────────────────────────────
+            SettingsSection(title = "错题快速转换") {
+                HomeworkSettingsCard(prefRepository = prefRepository)
+            }
+
             // ── 规则 ───────────────────────────────────────────
             SettingsSection(title = "规则与说明") {
                 SettingsCard {
@@ -690,7 +695,8 @@ fun SettingsScreen(
                             "• 自动匹配：课前 20 分钟 ～ 课后 30 分钟内，应用将自动为您切换锁定对应班级。\n" +
                             "• 自动考勤：点名页顶部云上传图标或「更多」中可打开校管家同步。应用按「班级号+班型」匹配 α1/β1/β2/β3 当天课程，先显示已到/迟到/请假/未到预览，确认后才提交；请假（不发回放）按校管家「事假」提交且不计费，请假（发回放）与其他已匹配学员按出勤并计费；已点名课程自动跳过，不发送微信/短信通知。\n" +
                             "• 每日提醒：每天 18:00 使用本地通知检查今天课表；如果还有班级没有成功同步记录，会在通知栏提醒。不需要注册远程推送，但 Android 13+ 需允许通知权限。\n" +
-                            "• 发送分享：导出时离线生成高清签到长图，直接调起安卓系统的“发送给”（支持微信、QQ等）；分享后会询问是否继续同步校管家，当天已同步的班型不会重复提示。",
+                            "• 发送分享：导出时离线生成高清签到长图，直接调起安卓系统的“发送给”（支持微信、QQ等）；分享后会询问是否继续同步校管家，当天已同步的班型不会重复提示。\n" +
+                            "• 错题转换：在任意输入框输入题号后紧接着输入触发词（默认 qqq，如 135qqq），会自动展开为预设文案；也可以长按选中题号，在系统菜单点「转为错题格式」。首次使用需到系统无障碍设置中开启「错题自动展开」。",
                         style = MaterialTheme.typography.bodyMedium,
                         color = InkSecondary
                     )
@@ -769,7 +775,7 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun SettingsSection(
+internal fun SettingsSection(
     title: String,
     content: @Composable ColumnScope.() -> Unit
 ) {
@@ -789,7 +795,7 @@ private fun SettingsSection(
 }
 
 @Composable
-private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
+internal fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
     Card(
         shape = RoundedCornerShape(Radii.Card),
         colors = CardDefaults.cardColors(containerColor = PaperSurface),

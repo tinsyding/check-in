@@ -1,4 +1,8 @@
 <resources>
     <string name="app_name">班级点名签到</string>
     <string name="zip_share_label">图片打包</string>
+
+    <string name="homework_accessibility_label">错题自动展开</string>
+    <string name="homework_accessibility_desc">开启后，在任意输入框输入题号并紧接着输入触发词（默认 qqq，如 135qqq），会自动替换为预设的错题格式文案。</string>
+    <string name="homework_process_text_label">转为错题格式</string>
 </resources>

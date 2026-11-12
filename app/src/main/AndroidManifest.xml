@@ -59,6 +59,33 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <!-- 划选文本菜单：转为错题格式 -->
+        <activity
+            android:name=".ui.homework.ProcessTextActivity"
+            android:exported="true"
+            android:label="@string/homework_process_text_label"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
+        <!-- 错题自动展开：需要在系统设置中手动开启 -->
+        <service
+            android:name=".service.TextExpanderService"
+            android:exported="true"
+            android:label="@string/homework_accessibility_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
     </application>
 
 </manifest>

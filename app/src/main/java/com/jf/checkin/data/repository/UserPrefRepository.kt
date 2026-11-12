@@ -2,6 +2,7 @@ package com.jf.checkin.data.repository
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.jf.checkin.logic.homework.TextProcessor
 import java.time.LocalDate
 
 class UserPrefRepository(context: Context) {
@@ -31,6 +32,13 @@ class UserPrefRepository(context: Context) {
         private const val KEY_STUDENT_REMARKS = "jf_student_remarks"
         private const val KEY_STUDENT_MOVES = "jf_student_moves"
         private const val KEY_ATTENDANCE_STATUSES = "jf_attendance_statuses"
+
+        // 错题快速转换（原 qqq 安卓端的配置）
+        private const val KEY_HOMEWORK_TRIGGER_WORD = "jf_homework_trigger_word"
+        private const val KEY_HOMEWORK_TRIGGER_ENABLED = "jf_homework_trigger_enabled"
+        private const val KEY_HOMEWORK_TEMPLATE = "jf_homework_template"
+        private const val KEY_HOMEWORK_SEPARATOR = "jf_homework_separator"
+        private const val KEY_HOMEWORK_SPLIT_MODE = "jf_homework_split_mode"
     }
 
     fun getPrinterProfiles(): List<com.jf.checkin.data.model.PrinterProfile> {
@@ -107,6 +115,46 @@ class UserPrefRepository(context: Context) {
     var zipDefaultName: String
         get() = prefs.getString(KEY_ZIP_DEFAULT_NAME, "") ?: ""
         set(value) = prefs.edit().putString(KEY_ZIP_DEFAULT_NAME, value).apply()
+
+    // ── 错题快速转换 ─────────────────────────────────────────
+    // 原 qqq 安卓端的独立 SharedPreferences 合并到这里统一管理。
+
+    /** 触发词，默认 qqq。 */
+    var homeworkTriggerWord: String
+        get() = prefs.getString(KEY_HOMEWORK_TRIGGER_WORD, null)
+            ?.takeIf { it.isNotBlank() }
+            ?: TextProcessor.DEFAULT_TRIGGER
+        set(value) = prefs.edit().putString(KEY_HOMEWORK_TRIGGER_WORD, value.trim()).apply()
+
+    /** 是否启用输入触发词后自动展开。 */
+    var homeworkTriggerEnabled: Boolean
+        get() = prefs.getBoolean(KEY_HOMEWORK_TRIGGER_ENABLED, true)
+        set(value) = prefs.edit().putBoolean(KEY_HOMEWORK_TRIGGER_ENABLED, value).apply()
+
+    /** 文案模板，{nums} 为题号占位符。 */
+    var homeworkTemplate: String
+        get() = prefs.getString(KEY_HOMEWORK_TEMPLATE, null)
+            ?.takeIf { it.isNotBlank() }
+            ?: TextProcessor.DEFAULT_TEMPLATE
+        set(value) = prefs.edit().putString(KEY_HOMEWORK_TEMPLATE, value.trim()).apply()
+
+    /** 题号分隔符，默认中文逗号。 */
+    var homeworkSeparator: String
+        get() = prefs.getString(KEY_HOMEWORK_SEPARATOR, null)
+            ?.takeIf { it.isNotEmpty() }
+            ?: TextProcessor.DEFAULT_SEPARATOR
+        set(value) = prefs.edit().putString(KEY_HOMEWORK_SEPARATOR, value).apply()
+
+    /** 拆分模式：smart / continuous / separated。 */
+    var homeworkSplitMode: String
+        get() = prefs.getString(KEY_HOMEWORK_SPLIT_MODE, null)
+            ?.takeIf {
+                it == TextProcessor.MODE_SMART ||
+                    it == TextProcessor.MODE_CONTINUOUS ||
+                    it == TextProcessor.MODE_SEPARATED
+            }
+            ?: TextProcessor.MODE_SMART
+        set(value) = prefs.edit().putString(KEY_HOMEWORK_SPLIT_MODE, value).apply()
 
     var username: String
         get() = prefs.getString(KEY_USERNAME, "") ?: ""
