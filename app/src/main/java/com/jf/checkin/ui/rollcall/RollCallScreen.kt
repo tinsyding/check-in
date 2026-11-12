@@ -166,7 +166,6 @@ fun RollCallScreen(
     var showResetAllDialog by remember { mutableStateOf(false) }
     var showTmsAfterShareDialog by remember { mutableStateOf(false) }
     var showScheduledDetailDialog by remember { mutableStateOf(false) }
-    var showTopBarMenu by remember { mutableStateOf(false) }
 
     LaunchedEffect(selectedClassCode) {
         viewModel.refreshScheduledSync()
@@ -250,7 +249,7 @@ fun RollCallScreen(
     val totalCount = currentStudents.size
 
     Column(modifier = Modifier.fillMaxSize().background(PaperBackground)) {
-        // 顶部全局导航栏：只保留操作入口，把宽度全部让给功能按钮
+        // 顶部全局导航栏：全部展开为顶栏功能按钮，无需折叠菜单
         TopAppBar(
             title = {},
             actions = {
@@ -278,79 +277,45 @@ fun RollCallScreen(
                         tint = InkSecondary
                     )
                 }
-                Box {
-                    IconButton(onClick = { showTopBarMenu = true }) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "更多操作",
-                            tint = InkSecondary
-                        )
+                // 打开网站下载名单 / 自动导入
+                IconButton(onClick = {
+                    if (viewModel.hasJfCredentials()) {
+                        viewModel.autoImportCsvFromJf()
+                    } else {
+                        onNavigateToBrowser()
                     }
-                    DropdownMenu(
-                        expanded = showTopBarMenu,
-                        onDismissRequest = { showTopBarMenu = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("历史记录") },
-                            leadingIcon = {
-                                Icon(
-                                    Icons.Default.History,
-                                    contentDescription = null,
-                                    tint = InkSecondary
-                                )
-                            },
-                            onClick = {
-                                showTopBarMenu = false
-                                onNavigateToHistory()
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("图片打包") },
-                            leadingIcon = {
-                                Icon(
-                                    Icons.Default.FolderZip,
-                                    contentDescription = null,
-                                    tint = InkSecondary
-                                )
-                            },
-                            onClick = {
-                                showTopBarMenu = false
-                                context.startActivity(Intent(context, ZipActivity::class.java))
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("打开网站下载名单") },
-                            leadingIcon = {
-                                Icon(
-                                    Icons.Default.Language,
-                                    contentDescription = null,
-                                    tint = InkSecondary
-                                )
-                            },
-                            onClick = {
-                                showTopBarMenu = false
-                                if (viewModel.hasJfCredentials()) {
-                                    viewModel.autoImportCsvFromJf()
-                                } else {
-                                    onNavigateToBrowser()
-                                }
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("设置") },
-                            leadingIcon = {
-                                Icon(
-                                    Icons.Default.Settings,
-                                    contentDescription = null,
-                                    tint = InkSecondary
-                                )
-                            },
-                            onClick = {
-                                showTopBarMenu = false
-                                onNavigateToSettings()
-                            }
-                        )
-                    }
+                }) {
+                    Icon(
+                        imageVector = Icons.Default.Language,
+                        contentDescription = "打开网站下载名单",
+                        tint = InkSecondary
+                    )
+                }
+                // 图片打包
+                IconButton(onClick = {
+                    context.startActivity(Intent(context, ZipActivity::class.java))
+                }) {
+                    Icon(
+                        imageVector = Icons.Default.FolderZip,
+                        contentDescription = "图片打包",
+                        tint = InkSecondary
+                    )
+                }
+                // 历史记录
+                IconButton(onClick = onNavigateToHistory) {
+                    Icon(
+                        imageVector = Icons.Default.History,
+                        contentDescription = "历史记录",
+                        tint = InkSecondary
+                    )
+                }
+                // 系统设置
+                IconButton(onClick = onNavigateToSettings) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "设置",
+                        tint = InkSecondary
+                    )
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
