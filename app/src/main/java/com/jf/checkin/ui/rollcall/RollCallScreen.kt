@@ -145,7 +145,6 @@ fun RollCallScreen(
     val selectedClassCode by viewModel.selectedClassCode.collectAsState()
     val currentStudents by viewModel.currentStudents.collectAsState()
     val isExporting by viewModel.isExporting.collectAsState()
-    val teacherName by viewModel.teacherName.collectAsState()
     val isAllPresent by viewModel.isAllPresent.collectAsState()
     val nameplateFontStyle by viewModel.nameplateFontStyle.collectAsState()
     val movedStudents by viewModel.movedStudents.collectAsState()
@@ -219,40 +218,14 @@ fun RollCallScreen(
         }
     }
 
-    val currentClassInfo = classList.find { it.classCode == selectedClassCode }
     val presentCount = currentStudents.count { it.status == AttendanceStatus.PRESENT }
     val onlineCount = currentStudents.count { it.status == AttendanceStatus.ONLINE }
     val totalCount = currentStudents.size
 
     Column(modifier = Modifier.fillMaxSize().background(PaperBackground)) {
-        // 顶部全局导航栏：展示标题、当前班级上课时间、任课教师
+        // 顶部全局导航栏：只保留操作入口，把宽度全部让给功能按钮
         TopAppBar(
-            title = {
-                Column {
-                    Text(
-                        text = "班级点名签到",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = InkPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    if (currentClassInfo != null && currentClassInfo.classTime.isNotBlank()) {
-                        val teacherText = if (teacherName.isNotBlank()) " | 教师: $teacherName" else " | 教师: 点击设置"
-                        Text(
-                            text = "上课时间: ${currentClassInfo.classTime}$teacherText",
-                            style = MaterialTheme.typography.bodySmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            color = InkSecondary,
-                            modifier = Modifier.clickable {
-                                inputTeacherName = teacherName
-                                pendingExportAction = null
-                                showTeacherDialog = true
-                            }
-                        )
-                    }
-                }
-            },
+            title = {},
             actions = {
                 // 智能自动切班按钮 (时钟图标，根据时间自动锁定正在上课的班级)
                 IconButton(onClick = { viewModel.autoMatchClassNow() }) {
