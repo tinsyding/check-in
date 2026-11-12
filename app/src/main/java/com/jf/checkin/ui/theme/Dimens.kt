@@ -23,7 +23,7 @@ object Radii {
 
 object Sizes {
     /** 卡片左侧状态色边 */
-    val StatusEdge = 3.dp
+    val StatusEdge = 4.dp
 
     /** 最小可点高度 */
     val ControlHeight = 40.dp
