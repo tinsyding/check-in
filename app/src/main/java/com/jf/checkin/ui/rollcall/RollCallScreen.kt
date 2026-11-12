@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -66,6 +68,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ScrollableTabRow
@@ -97,9 +100,23 @@ import com.jf.checkin.data.remote.TmsCourseResult
 import com.jf.checkin.data.remote.TmsMissingCourse
 import com.jf.checkin.data.remote.TmsMissingReport
 import com.jf.checkin.data.remote.TmsSyncPreview
-import com.jf.checkin.ui.theme.AccentGreen
 import com.jf.checkin.logic.NameplateFontStyle
-import com.jf.checkin.ui.theme.PrimaryBlue
+import com.jf.checkin.ui.theme.Danger
+import com.jf.checkin.ui.theme.Hairline
+import com.jf.checkin.ui.theme.InkOnDark
+import com.jf.checkin.ui.theme.InkPrimary
+import com.jf.checkin.ui.theme.InkSecondary
+import com.jf.checkin.ui.theme.InkTertiary
+import com.jf.checkin.ui.theme.PaperBackground
+import com.jf.checkin.ui.theme.PaperSurface
+import com.jf.checkin.ui.theme.PaperSunken
+import com.jf.checkin.ui.theme.Radii
+import com.jf.checkin.ui.theme.RedPen
+import com.jf.checkin.ui.theme.Sizes
+import com.jf.checkin.ui.theme.Spacing
+import com.jf.checkin.ui.theme.StatusLateInk
+import com.jf.checkin.ui.theme.StatusLeaveReplayInk
+import com.jf.checkin.ui.theme.StatusOnlineInk
 import java.time.LocalDate
 import java.util.Locale
 
@@ -146,6 +163,7 @@ fun RollCallScreen(
     var showResetAllDialog by remember { mutableStateOf(false) }
     var showTmsAfterShareDialog by remember { mutableStateOf(false) }
     var showScheduledDetailDialog by remember { mutableStateOf(false) }
+    var showTopBarMenu by remember { mutableStateOf(false) }
 
     LaunchedEffect(selectedClassCode) {
         viewModel.refreshScheduledSync()
@@ -203,15 +221,15 @@ fun RollCallScreen(
     val onlineCount = currentStudents.count { it.status == AttendanceStatus.ONLINE }
     val totalCount = currentStudents.size
 
-    Column(modifier = Modifier.fillMaxSize().background(Color(0xFFF8FAFC))) {
+    Column(modifier = Modifier.fillMaxSize().background(PaperBackground)) {
         // 顶部全局导航栏：展示标题、当前班级上课时间、任课教师
         TopAppBar(
             title = {
                 Column {
                     Text(
                         text = "班级点名签到",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = InkPrimary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -219,11 +237,10 @@ fun RollCallScreen(
                         val teacherText = if (teacherName.isNotBlank()) " | 教师: $teacherName" else " | 教师: 点击设置"
                         Text(
                             text = "上课时间: ${currentClassInfo.classTime}$teacherText",
-                            fontSize = 11.sp,
+                            style = MaterialTheme.typography.bodySmall,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            color = PrimaryBlue,
-                            fontWeight = FontWeight.Medium,
+                            color = InkSecondary,
                             modifier = Modifier.clickable {
                                 inputTeacherName = teacherName
                                 pendingExportAction = null
@@ -239,7 +256,7 @@ fun RollCallScreen(
                     Icon(
                         imageVector = Icons.Default.Schedule,
                         contentDescription = "根据当前时间自动匹配班级",
-                        tint = PrimaryBlue
+                        tint = InkSecondary
                     )
                 }
                 // 校管家自动考勤：先预览，确认后才提交
@@ -247,7 +264,7 @@ fun RollCallScreen(
                     Icon(
                         imageVector = Icons.Default.CloudUpload,
                         contentDescription = "自动同步校管家考勤",
-                        tint = PrimaryBlue
+                        tint = InkSecondary
                     )
                 }
                 // 检查今天/最近三日还有哪些班级没有考勤
@@ -255,50 +272,82 @@ fun RollCallScreen(
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.FactCheck,
                         contentDescription = "检查未考勤班级",
-                        tint = PrimaryBlue
+                        tint = InkSecondary
                     )
                 }
-                // 历史记录
-                IconButton(onClick = onNavigateToHistory) {
-                    Icon(
-                        imageVector = Icons.Default.History,
-                        contentDescription = "查看历史签到记录",
-                        tint = Color(0xFF475569)
-                    )
-                }
-                // 内置受控浏览器（去下载/自动更新学生名单）
-                IconButton(onClick = onNavigateToBrowser) {
-                    Icon(
-                        imageVector = Icons.Default.Language,
-                        contentDescription = "打开网站下载名单",
-                        tint = Color(0xFF475569)
-                    )
-                }
-                // 设置
-                IconButton(onClick = onNavigateToSettings) {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = "设置",
-                        tint = Color(0xFF475569)
-                    )
+                Box {
+                    IconButton(onClick = { showTopBarMenu = true }) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "更多操作",
+                            tint = InkSecondary
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showTopBarMenu,
+                        onDismissRequest = { showTopBarMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("历史记录") },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.History,
+                                    contentDescription = null,
+                                    tint = InkSecondary
+                                )
+                            },
+                            onClick = {
+                                showTopBarMenu = false
+                                onNavigateToHistory()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("打开网站下载名单") },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.Language,
+                                    contentDescription = null,
+                                    tint = InkSecondary
+                                )
+                            },
+                            onClick = {
+                                showTopBarMenu = false
+                                onNavigateToBrowser()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("设置") },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.Settings,
+                                    contentDescription = null,
+                                    tint = InkSecondary
+                                )
+                            },
+                            onClick = {
+                                showTopBarMenu = false
+                                onNavigateToSettings()
+                            }
+                        )
+                    }
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = Color.White
+                containerColor = PaperSurface
             )
         )
 
         // 预约考勤等待提醒条
         if (scheduledSync != null && scheduledSync?.classCode == selectedClassCode) {
             Surface(
-                color = Color(0xFFEFF6FF),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBFDBFE)),
+                color = PaperSunken,
+                border = androidx.compose.foundation.BorderStroke(1.dp, Hairline),
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { showScheduledDetailDialog = true }
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(horizontal = Spacing.Lg, vertical = Spacing.Sm),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
@@ -309,21 +358,20 @@ fun RollCallScreen(
                         Icon(
                             imageVector = Icons.Default.Schedule,
                             contentDescription = null,
-                            tint = PrimaryBlue,
+                            tint = InkSecondary,
                             modifier = Modifier.size(16.dp)
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(Spacing.Sm))
                         Text(
                             text = "已预约在 ${scheduledSync?.targetTime} 上课后自动考勤",
-                            color = PrimaryBlue,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
+                            color = InkPrimary,
+                            style = MaterialTheme.typography.bodySmall
                         )
                     }
                     Text(
                         text = "查看 / 取消",
-                        color = PrimaryBlue,
-                        fontSize = 12.sp,
+                        color = InkPrimary,
+                        style = MaterialTheme.typography.labelMedium,
                         textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline
                     )
                 }
@@ -450,7 +498,7 @@ fun RollCallScreen(
     if (showResetAllDialog) {
         AlertDialog(
             onDismissRequest = { showResetAllDialog = false },
-            title = { Text("全部清空", fontWeight = FontWeight.Bold) },
+            title = { Text("全部清空", fontWeight = FontWeight.SemiBold) },
             text = { Text("将所有班级的签到状态全部清除（回到未到）？该操作不可撤销。") },
             confirmButton = {
                 Button(onClick = {
@@ -504,29 +552,29 @@ fun RollCallScreen(
                 Icon(
                     imageVector = Icons.Default.Schedule,
                     contentDescription = null,
-                    tint = PrimaryBlue,
+                    tint = InkPrimary,
                     modifier = Modifier.size(28.dp)
                 )
             },
-            title = { Text("考勤已预约", fontWeight = FontWeight.Bold) },
+            title = { Text("考勤已预约", fontWeight = FontWeight.SemiBold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         text = "班级 ${currentScheduled?.classCode} 已预约在 ${currentScheduled?.targetTime} 上课后自动提交考勤至校管家。",
-                        fontSize = 14.sp,
-                        color = Color(0xFF1E293B)
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = InkPrimary
                     )
                     Text(
                         text = "您可以随时退出应用，系统在到达上课时间后会在后台自动执行同步并发送通知。若在此之前修改了学生签到状态，后台将自动按最新点名结果提交。",
-                        fontSize = 12.sp,
-                        color = Color(0xFF64748B)
+                        style = MaterialTheme.typography.bodySmall,
+                        color = InkTertiary
                     )
                 }
             },
             confirmButton = {
                 Button(
                     onClick = { showScheduledDetailDialog = false },
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                    colors = ButtonDefaults.buttonColors(containerColor = InkPrimary)
                 ) {
                     Text("我知道了")
                 }
@@ -556,14 +604,14 @@ fun RollCallScreen(
                 Icon(
                     Icons.Default.CloudUpload,
                     contentDescription = null,
-                    tint = PrimaryBlue,
+                    tint = InkPrimary,
                     modifier = Modifier.size(28.dp)
                 )
             },
             title = {
                 Text(
                     text = if (hasTmsCredentials) "同步校管家考勤？" else "尚未配置校管家账号",
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.SemiBold
                 )
             },
             text = {
@@ -573,7 +621,7 @@ fun RollCallScreen(
                     } else {
                         "签到表已生成，但还没有填写校管家账号密码。请先到设置中完成配置，之后就能在分享后直接同步。"
                     },
-                    fontSize = 14.sp,
+                    style = MaterialTheme.typography.bodyMedium,
                     lineHeight = 21.sp
                 )
             },
@@ -587,7 +635,7 @@ fun RollCallScreen(
                             onNavigateToSettings()
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                    colors = ButtonDefaults.buttonColors(containerColor = InkPrimary)
                 ) {
                     Text(if (hasTmsCredentials) "同步校管家" else "去设置")
                 }
@@ -624,16 +672,16 @@ fun RollCallScreen(
                 Icon(
                     imageVector = Icons.Default.Print,
                     contentDescription = null,
-                    tint = PrimaryBlue,
+                    tint = InkPrimary,
                     modifier = Modifier.size(28.dp)
                 )
             },
             title = {
-                Text("班级席卡", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text("班级席卡", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleLarge)
             },
             text = {
                 Column(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.Md),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     // 班级与学生人数
@@ -644,19 +692,19 @@ fun RollCallScreen(
                     ) {
                         Text(
                             text = "班级: $currentCode",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = Color(0xFF1E293B)
+                            fontWeight = FontWeight.SemiBold,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = InkPrimary
                         )
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = PrimaryBlue.copy(alpha = 0.1f)
+                            color = InkPrimary.copy(alpha = 0.1f)
                         ) {
                             Text(
                                 text = "共 ${currentStudents.size} 人",
-                                color = PrimaryBlue,
+                                color = InkPrimary,
                                 fontWeight = FontWeight.SemiBold,
-                                fontSize = 12.sp,
+                                style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                             )
                         }
@@ -685,11 +733,11 @@ fun RollCallScreen(
 
                     Column(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                        verticalArrangement = Arrangement.spacedBy(Spacing.Sm)
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.Sm)
                         ) {
                             row1Channels.forEach { ch ->
                                 val isSelected = selectedChannel == ch
@@ -705,16 +753,16 @@ fun RollCallScreen(
                                         }
                                     },
                                     shape = RoundedCornerShape(8.dp),
-                                    color = if (isSelected) PrimaryBlue else Color(0xFFF1F5F9),
-                                    contentColor = if (isSelected) Color.White else Color(0xFF334155),
-                                    border = if (isSelected) null else androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                                    color = if (isSelected) InkPrimary else PaperSunken,
+                                    contentColor = if (isSelected) InkOnDark else InkSecondary,
+                                    border = if (isSelected) null else androidx.compose.foundation.BorderStroke(1.dp, Hairline),
                                     modifier = Modifier.weight(1f).height(36.dp)
                                 ) {
                                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                                         Text(
                                             text = ch.label,
-                                            fontSize = 12.sp,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                                             maxLines = 1
                                         )
                                     }
@@ -723,7 +771,7 @@ fun RollCallScreen(
                         }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.Sm)
                         ) {
                             row2Channels.forEach { ch ->
                                 val isSelected = selectedChannel == ch
@@ -739,16 +787,16 @@ fun RollCallScreen(
                                         }
                                     },
                                     shape = RoundedCornerShape(8.dp),
-                                    color = if (isSelected) PrimaryBlue else Color(0xFFF1F5F9),
-                                    contentColor = if (isSelected) Color.White else Color(0xFF334155),
-                                    border = if (isSelected) null else androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                                    color = if (isSelected) InkPrimary else PaperSunken,
+                                    contentColor = if (isSelected) InkOnDark else InkSecondary,
+                                    border = if (isSelected) null else androidx.compose.foundation.BorderStroke(1.dp, Hairline),
                                     modifier = Modifier.weight(1f).height(36.dp)
                                 ) {
                                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                                         Text(
                                             text = ch.label,
-                                            fontSize = 12.sp,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                                             maxLines = 1
                                         )
                                     }
@@ -761,17 +809,17 @@ fun RollCallScreen(
                     when (selectedChannel) {
                         PrintChannel.RAW_9100 -> {
                             Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = Color(0xFFF8FAFC),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                                shape = RoundedCornerShape(Radii.Control),
+                                color = PaperBackground,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Hairline),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Column(
-                                    modifier = Modifier.padding(10.dp),
+                                    modifier = Modifier.padding(Spacing.Md),
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     if (profiles.isNotEmpty()) {
-                                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        LazyRow(horizontalArrangement = Arrangement.spacedBy(Spacing.Sm)) {
                                             items(profiles) { profile ->
                                                 val isSelected = (profile.ip == editIp && profile.port.toString() == editPort)
                                                 FilterChip(
@@ -781,7 +829,7 @@ fun RollCallScreen(
                                                         editIp = profile.ip
                                                         editPort = profile.port.toString()
                                                     },
-                                                    label = { Text(profile.name, fontSize = 12.sp) }
+                                                    label = { Text(profile.name, style = MaterialTheme.typography.bodySmall) }
                                                 )
                                             }
                                         }
@@ -808,7 +856,7 @@ fun RollCallScreen(
                                     ) {
                                         Checkbox(checked = forceSimplex, onCheckedChange = { forceSimplex = it })
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("单面打印", fontSize = 12.sp, color = Color(0xFF475569))
+                                        Text("单面打印", style = MaterialTheme.typography.bodySmall, color = InkSecondary)
                                     }
                                 }
                             }
@@ -822,7 +870,7 @@ fun RollCallScreen(
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("测试打印 (1张)", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                    Text("测试打印 (1张)", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
                                 }
                                 Button(
                                     onClick = {
@@ -831,22 +879,22 @@ fun RollCallScreen(
                                             context, editIp.trim(), editPort.trim(), forceSimplex, isTestOneSheet = false
                                         )
                                     },
-                                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                                    colors = ButtonDefaults.buttonColors(containerColor = InkPrimary),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("打印全班 (${currentStudents.size}张)", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                    Text("打印全班 (${currentStudents.size}张)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                                 }
                             }
                         }
                         PrintChannel.LPR_515 -> {
                             Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = Color(0xFFF8FAFC),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                                shape = RoundedCornerShape(Radii.Control),
+                                color = PaperBackground,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Hairline),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Column(
-                                    modifier = Modifier.padding(10.dp),
+                                    modifier = Modifier.padding(Spacing.Md),
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -884,7 +932,7 @@ fun RollCallScreen(
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("LPR测试打印 (1张)", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                    Text("LPR测试打印 (1张)", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
                                 }
                                 Button(
                                     onClick = {
@@ -893,22 +941,22 @@ fun RollCallScreen(
                                             context, editIp.trim(), editPort.trim(), editQueue.trim(), isTestOneSheet = false
                                         )
                                     },
-                                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                                    colors = ButtonDefaults.buttonColors(containerColor = InkPrimary),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("LPR打印全班 (${currentStudents.size}张)", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                    Text("LPR打印全班 (${currentStudents.size}张)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                                 }
                             }
                         }
                         PrintChannel.FTP_21 -> {
                             Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = Color(0xFFF8FAFC),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                                shape = RoundedCornerShape(Radii.Control),
+                                color = PaperBackground,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Hairline),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Column(
-                                    modifier = Modifier.padding(10.dp),
+                                    modifier = Modifier.padding(Spacing.Md),
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -937,17 +985,17 @@ fun RollCallScreen(
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("FTP测试投递 (1张)", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                    Text("FTP测试投递 (1张)", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
                                 }
                                 Button(
                                     onClick = {
                                         showNameplateDialog = false
                                         viewModel.printViaFtp(context, editIp.trim(), editPort.trim(), isTestOneSheet = false)
                                     },
-                                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                                    colors = ButtonDefaults.buttonColors(containerColor = InkPrimary),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("FTP投递全班 (${currentStudents.size}张)", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                    Text("FTP投递全班 (${currentStudents.size}张)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                                 }
                             }
                         }
@@ -960,28 +1008,28 @@ fun RollCallScreen(
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("系统测试打印 (1张)", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                    Text("系统测试打印 (1张)", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
                                 }
                                 Button(
                                     onClick = {
                                         showNameplateDialog = false
                                         viewModel.printViaSystem(context, isTestOneSheet = false)
                                     },
-                                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                                    colors = ButtonDefaults.buttonColors(containerColor = InkPrimary),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("系统打印全班 (${currentStudents.size}张)", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                    Text("系统打印全班 (${currentStudents.size}张)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                                 }
                             }
                         }
                         PrintChannel.WEB -> {
                             Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = Color(0xFFF8FAFC),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                                shape = RoundedCornerShape(Radii.Control),
+                                color = PaperBackground,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Hairline),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Column(modifier = Modifier.padding(10.dp)) {
+                                Column(modifier = Modifier.padding(Spacing.Md)) {
                                     OutlinedTextField(
                                         value = editIp,
                                         onValueChange = { editIp = it },
@@ -996,10 +1044,10 @@ fun RollCallScreen(
                                     onClick = {
                                         viewModel.openPrinterWeb(context, editIp.trim())
                                     },
-                                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                                    colors = ButtonDefaults.buttonColors(containerColor = InkPrimary),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("打开复合机网页", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                    Text("打开复合机网页", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                                 }
                                 FilledTonalButton(
                                     onClick = {
@@ -1007,7 +1055,7 @@ fun RollCallScreen(
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("下载PDF (用于网页上传)", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                    Text("下载PDF (用于网页上传)", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
                                 }
                             }
                         }
@@ -1018,10 +1066,10 @@ fun RollCallScreen(
                                         showNameplateDialog = false
                                         viewModel.exportAndShareNameplatePdf(context)
                                     },
-                                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                                    colors = ButtonDefaults.buttonColors(containerColor = InkPrimary),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("调用官方App / 分享", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                    Text("调用官方App / 分享", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                                 }
                                 FilledTonalButton(
                                     onClick = {
@@ -1029,7 +1077,7 @@ fun RollCallScreen(
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("下载PDF", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                    Text("下载PDF", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
                                 }
                             }
                         }
@@ -1055,7 +1103,7 @@ fun RollCallScreen(
                             showNameplateDialog = false
                             viewModel.exportAndShareNameplatePdf(context)
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                        colors = ButtonDefaults.buttonColors(containerColor = InkPrimary),
                         modifier = Modifier.weight(1f)
                     ) {
                         Text("分享")
@@ -1079,14 +1127,14 @@ fun RollCallScreen(
                 pendingExportAction = null
             },
             title = {
-                Text("设置任课教师姓名", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Text("设置任课教师姓名", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         text = "导出的签到表需要展示任课教师姓名，请在此输入（设置后自动保存）：",
-                        fontSize = 13.sp,
-                        color = Color(0xFF475569)
+                        style = MaterialTheme.typography.bodySmall,
+                        color = InkSecondary
                     )
                     OutlinedTextField(
                         value = inputTeacherName,
@@ -1107,7 +1155,7 @@ fun RollCallScreen(
                         pendingExportAction?.invoke()
                         pendingExportAction = null
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                    colors = ButtonDefaults.buttonColors(containerColor = InkPrimary)
                 ) {
                     Text("保存并继续导出")
                 }
@@ -1133,13 +1181,13 @@ fun RollCallScreen(
         var inputRemark by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showAddStudentDialog = false },
-            title = { Text("调入学生到 $selectedClassCode", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
+            title = { Text("调入学生到 $selectedClassCode", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         text = "用于其他老师班上的学生临时调过来听课，保存后独立存储，重导名单不丢失。",
-                        fontSize = 13.sp,
-                        color = Color(0xFF475569)
+                        style = MaterialTheme.typography.bodySmall,
+                        color = InkSecondary
                     )
                     OutlinedTextField(
                         value = inputName,
@@ -1176,7 +1224,7 @@ fun RollCallScreen(
                             Toast.makeText(context, error, Toast.LENGTH_LONG).show()
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                    colors = ButtonDefaults.buttonColors(containerColor = InkPrimary)
                 ) {
                     Text("保存")
                 }
@@ -1193,7 +1241,7 @@ fun RollCallScreen(
     remarkEditingStudent?.let { target ->
         AlertDialog(
             onDismissRequest = { remarkEditingStudent = null },
-            title = { Text("备注 · ${target.name}(${target.studentId})", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+            title = { Text("备注 · ${target.name}(${target.studentId})", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
@@ -1212,7 +1260,7 @@ fun RollCallScreen(
                         remarkEditingStudent = null
                         Toast.makeText(context, "备注已保存", Toast.LENGTH_SHORT).show()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                    colors = ButtonDefaults.buttonColors(containerColor = InkPrimary)
                 ) {
                     Text("保存")
                 }
@@ -1229,7 +1277,7 @@ fun RollCallScreen(
     deleteConfirmStudent?.let { target ->
         AlertDialog(
             onDismissRequest = { deleteConfirmStudent = null },
-            title = { Text("删除调入学生？", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+            title = { Text("删除调入学生？", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium) },
             text = { Text("将 ${target.name}(${target.studentId}) 移出 $selectedClassCode，该操作仅影响手动调入名单。") },
             confirmButton = {
                 Button(
@@ -1242,7 +1290,7 @@ fun RollCallScreen(
                             Toast.LENGTH_SHORT
                         ).show()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                    colors = ButtonDefaults.buttonColors(containerColor = Danger)
                 ) {
                     Text("删除")
                 }
@@ -1263,7 +1311,7 @@ fun RollCallScreen(
         }
         AlertDialog(
             onDismissRequest = { moveStudent = null },
-            title = { Text("调班 · ${target.name}(${target.studentId})", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+            title = { Text("调班 · ${target.name}(${target.studentId})", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
@@ -1274,25 +1322,25 @@ fun RollCallScreen(
                             }
                             append("，请选择目标班级。调动后自动继承目标班上课时间，重导名单不丢失。")
                         },
-                        fontSize = 13.sp,
-                        color = Color(0xFF475569)
+                        style = MaterialTheme.typography.bodySmall,
+                        color = InkSecondary
                     )
                     if (candidates.isEmpty()) {
                         Text(
                             text = "暂无其他班级可选。",
-                            fontSize = 13.sp,
-                            color = Color(0xFFEF4444)
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Danger
                         )
                     } else {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(Spacing.Sm)) {
                             candidates.forEach { info ->
                                 val isSelected = (info.classCode == moveTargetCode)
                                 Surface(
                                     shape = RoundedCornerShape(8.dp),
-                                    color = if (isSelected) PrimaryBlue.copy(alpha = 0.1f) else Color(0xFFF8FAFC),
+                                    color = if (isSelected) InkPrimary.copy(alpha = 0.1f) else PaperBackground,
                                     border = androidx.compose.foundation.BorderStroke(
                                         1.dp,
-                                        if (isSelected) PrimaryBlue else Color(0xFFE2E8F0)
+                                        if (isSelected) InkPrimary else Hairline
                                     ),
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -1308,22 +1356,22 @@ fun RollCallScreen(
                                         Column {
                                             Text(
                                                 text = info.classCode,
-                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                                fontSize = 14.sp,
-                                                color = if (isSelected) PrimaryBlue else Color(0xFF1E293B)
+                                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = if (isSelected) InkPrimary else InkPrimary
                                             )
                                             if (info.classTime.isNotBlank()) {
                                                 Text(
                                                     text = info.classTime,
-                                                    fontSize = 11.sp,
-                                                    color = Color(0xFF64748B)
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = InkTertiary
                                                 )
                                             }
                                         }
                                         Text(
                                             text = "${info.presentCount}/${info.totalCount}",
-                                            fontSize = 12.sp,
-                                            color = Color(0xFF64748B)
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = InkTertiary
                                         )
                                     }
                                 }
@@ -1344,7 +1392,7 @@ fun RollCallScreen(
                         }
                     },
                     enabled = candidates.isNotEmpty() && moveTargetCode.isNotBlank(),
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                    colors = ButtonDefaults.buttonColors(containerColor = InkPrimary)
                 ) {
                     Text("确认调班")
                 }
@@ -1414,33 +1462,33 @@ private fun TmsScheduledDialog(
             Icon(
                 imageVector = Icons.Default.Schedule,
                 contentDescription = null,
-                tint = PrimaryBlue,
+                tint = InkPrimary,
                 modifier = Modifier.size(28.dp)
             )
         },
         title = {
-            Text("考勤已预约", fontWeight = FontWeight.Bold)
+            Text("考勤已预约", fontWeight = FontWeight.SemiBold)
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.Md)) {
                 Text(
                     text = "班级 ${state.classCode} 的考勤已加入后台等待队列，将于上课时间（${state.startTime}）自动提交至校管家。",
-                    fontSize = 14.sp,
-                    color = Color(0xFF1E293B)
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = InkPrimary
                 )
                 Surface(
                     shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFFF8FAFC),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                    color = PaperBackground,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Hairline),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
-                        modifier = Modifier.padding(10.dp),
+                        modifier = Modifier.padding(Spacing.Md),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Text("• 您可以退出应用，到达上课时间后台将自动执行提交。", fontSize = 12.sp, color = Color(0xFF64748B))
-                        Text("• 考勤完成后将通过系统通知栏提醒结果。", fontSize = 12.sp, color = Color(0xFF64748B))
-                        Text("• 等待期间若有点名变动，后台将以最新点名数据为准。", fontSize = 12.sp, color = Color(0xFF64748B))
+                        Text("• 您可以退出应用，到达上课时间后台将自动执行提交。", style = MaterialTheme.typography.bodySmall, color = InkTertiary)
+                        Text("• 考勤完成后将通过系统通知栏提醒结果。", style = MaterialTheme.typography.bodySmall, color = InkTertiary)
+                        Text("• 等待期间若有点名变动，后台将以最新点名数据为准。", style = MaterialTheme.typography.bodySmall, color = InkTertiary)
                     }
                 }
             }
@@ -1448,7 +1496,7 @@ private fun TmsScheduledDialog(
         confirmButton = {
             Button(
                 onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                colors = ButtonDefaults.buttonColors(containerColor = InkPrimary)
             ) {
                 Text("我知道了")
             }
@@ -1470,15 +1518,15 @@ private fun TmsScheduledDialog(
 private fun TmsBusyDialog(title: String, message: String) {
     AlertDialog(
         onDismissRequest = {},
-        title = { Text(title, fontWeight = FontWeight.Bold) },
+        title = { Text(title, fontWeight = FontWeight.SemiBold) },
         text = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(
-                    modifier = Modifier.size(26.dp),
+                    modifier = Modifier.size(24.dp),
                     strokeWidth = 3.dp
                 )
                 Spacer(modifier = Modifier.width(12.dp))
-                Text(message, fontSize = 14.sp)
+                Text(message, style = MaterialTheme.typography.bodyMedium)
             }
         },
         confirmButton = {}
@@ -1514,7 +1562,7 @@ private fun TmsPreviewDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("校管家考勤同步预览", fontWeight = FontWeight.Bold) },
+        title = { Text("校管家考勤同步预览", fontWeight = FontWeight.SemiBold) },
         text = {
             Column(
                 modifier = Modifier
@@ -1536,101 +1584,101 @@ private fun TmsPreviewDialog(
                         Text("重新匹配")
                     }
                 }
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(Spacing.Sm))
                 Text(
                     text = "默认同步今天；补课或跨天点名可修改日期后重新匹配。",
-                    fontSize = 12.sp,
-                    color = Color(0xFF64748B)
+                    style = MaterialTheme.typography.bodySmall,
+                    color = InkTertiary
                 )
                 if (dateChanged) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "日期已修改，请先点「重新匹配」，否则确认按钮不会提交。",
-                        fontSize = 12.sp,
+                        style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Medium,
-                        color = Color(0xFFB45309)
+                        color = StatusLateInk
                     )
                 }
                 Spacer(modifier = Modifier.height(12.dp))
 
                 if (futureStart != null) {
                     Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = Color(0xFFEFF6FF),
+                        shape = RoundedCornerShape(Radii.Control),
+                        color = PaperSunken,
                         border = androidx.compose.foundation.BorderStroke(
                             1.dp,
-                            Color(0xFFBFDBFE)
+                            Hairline
                         ),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
-                            modifier = Modifier.padding(10.dp),
+                            modifier = Modifier.padding(Spacing.Md),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Schedule,
                                 contentDescription = null,
-                                tint = PrimaryBlue,
+                                tint = InkPrimary,
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "尚未到达上课时间（课程将于 $targetTimeStr 开始）。点击「预约到时考勤」后，系统将在后台等待至 $targetTimeStr 自动提交考勤至校管家，期间无需保持应用打开。",
-                                fontSize = 12.sp,
-                                color = Color(0xFF1E40AF),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = InkPrimary,
                                 lineHeight = 18.sp
                             )
                         }
                     }
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(Spacing.Md))
                 }
 
                 if (preview.plans.isEmpty()) {
                     Text(
                         text = "没有找到可同步的课程（α1/β1/β2/β3）。",
-                        fontSize = 13.sp,
-                        color = Color(0xFFB45309)
+                        style = MaterialTheme.typography.bodySmall,
+                        color = StatusLateInk
                     )
                 }
                 preview.plans.forEach { plan ->
                     TmsPlanCard(plan)
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(Spacing.Md))
                 }
 
                 if (preview.warnings.isNotEmpty()) {
                     Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = Color(0xFFFFFBEB),
+                        shape = RoundedCornerShape(Radii.Control),
+                        color = PaperSunken,
                         border = androidx.compose.foundation.BorderStroke(
                             1.dp,
-                            Color(0xFFFCD34D)
+                            Hairline
                         ),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
+                        Column(modifier = Modifier.padding(Spacing.Md)) {
                             Text(
                                 text = "需要注意",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                color = Color(0xFF92400E)
+                                fontWeight = FontWeight.SemiBold,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = StatusLateInk
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             preview.warnings.forEach { warning ->
                                 Text(
                                     text = "• $warning",
-                                    fontSize = 12.sp,
-                                    color = Color(0xFF92400E)
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = StatusLateInk
                                 )
                             }
                         }
                     }
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(Spacing.Md))
                 }
 
                 Text(
                     text = "规则：α1/β1/β2/β3 均会同步；请假（不发回放）按事假提交且不计费，其余已匹配学员按出勤提交并计费；已点名课程自动跳过；不会发送微信/短信通知。",
-                    fontSize = 12.sp,
-                    color = Color(0xFF64748B)
+                    style = MaterialTheme.typography.bodySmall,
+                    color = InkTertiary
                 )
             }
         },
@@ -1639,7 +1687,7 @@ private fun TmsPreviewDialog(
                 dateChanged -> {
                     Button(
                         onClick = reload,
-                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                        colors = ButtonDefaults.buttonColors(containerColor = InkPrimary)
                     ) {
                         Text("按新日期重新匹配")
                     }
@@ -1647,42 +1695,42 @@ private fun TmsPreviewDialog(
                 preview.canSubmit || preview.canForceSubmit -> {
                     Column(
                         horizontalAlignment = Alignment.End,
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                        verticalArrangement = Arrangement.spacedBy(Spacing.Sm)
                     ) {
                         if (preview.canSubmit) {
                             val isScheduled = futureStart != null
                             Button(
                                 onClick = onConfirm,
-                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                                colors = ButtonDefaults.buttonColors(containerColor = InkPrimary)
                             ) {
                                 Icon(
                                     imageVector = if (isScheduled) Icons.Default.Schedule else Icons.Default.CloudUpload,
                                     contentDescription = null,
                                     modifier = Modifier.size(18.dp)
                                 )
-                                Spacer(modifier = Modifier.width(6.dp))
+                                Spacer(modifier = Modifier.width(Spacing.Sm))
                                 val label = if (isScheduled) {
                                     "预约到时考勤 ($targetTimeStr)"
                                 } else {
                                     "确认同步 (${preview.submittableCount})"
                                 }
-                                Text(label, fontWeight = FontWeight.Bold)
+                                Text(label, fontWeight = FontWeight.SemiBold)
                             }
                         }
                         if (preview.canForceSubmit) {
                             Button(
                                 onClick = { showForceConfirm = true },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB45309))
+                                colors = ButtonDefaults.buttonColors(containerColor = StatusLateInk)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Check,
                                     contentDescription = null,
                                     modifier = Modifier.size(18.dp)
                                 )
-                                Spacer(modifier = Modifier.width(6.dp))
+                                Spacer(modifier = Modifier.width(Spacing.Sm))
                                 Text(
                                     if (preview.canSubmit) "名单对不上？强行考勤" else "强行考勤 (${preview.forceSubmittableCount})",
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.SemiBold
                                 )
                             }
                         }
@@ -1716,11 +1764,11 @@ private fun TmsPreviewDialog(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.FactCheck,
                     contentDescription = null,
-                    tint = Color(0xFFB45309),
+                    tint = StatusLateInk,
                     modifier = Modifier.size(28.dp)
                 )
             },
-            title = { Text("确认强行考勤？", fontWeight = FontWeight.Bold) },
+            title = { Text("确认强行考勤？", fontWeight = FontWeight.SemiBold) },
             text = {
                 Column(
                     modifier = Modifier
@@ -1731,29 +1779,29 @@ private fun TmsPreviewDialog(
                 ) {
                     Text(
                         text = "本地名单与校管家不一致，强行考勤只会提交已匹配的学员，未匹配的本地学员不会写入校管家。",
-                        fontSize = 13.sp,
-                        color = Color(0xFF334155)
+                        style = MaterialTheme.typography.bodySmall,
+                        color = InkSecondary
                     )
                     forcePlans.forEach { plan ->
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFFFFFBEB),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFCD34D)),
+                            color = PaperSunken,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Hairline),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(modifier = Modifier.padding(8.dp)) {
                                 Text(
                                     text = plan.className,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
-                                    color = Color(0xFF92400E)
+                                    fontWeight = FontWeight.SemiBold,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = StatusLateInk
                                 )
                                 Text(
                                     text = "将提交已匹配 ${plan.matches.size} 人；跳过：${
                                         plan.unmatchedAppStudents.joinToString("、") { it.name }
                                     }",
-                                    fontSize = 12.sp,
-                                    color = Color(0xFF92400E)
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = StatusLateInk
                                 )
                             }
                         }
@@ -1761,8 +1809,8 @@ private fun TmsPreviewDialog(
                     if (normalCount > 0) {
                         Text(
                             text = "另有 $normalCount 个班型可正常同步，将一并提交。",
-                            fontSize = 12.sp,
-                            color = Color(0xFF475569)
+                            style = MaterialTheme.typography.bodySmall,
+                            color = InkSecondary
                         )
                     }
                     if (skippedStudents.isNotEmpty()) {
@@ -1770,14 +1818,14 @@ private fun TmsPreviewDialog(
                             text = "共跳过 ${skippedStudents.size} 名本地学员：${
                                 skippedStudents.joinToString("、") { it.name }
                             }",
-                            fontSize = 12.sp,
-                            color = Color(0xFFB45309)
+                            style = MaterialTheme.typography.bodySmall,
+                            color = StatusLateInk
                         )
                     }
                     Text(
                         text = "校管家多出的学员保持原状；请假（不发回放）按事假提交且不计费，其余已匹配学员按出勤提交并计费，且不会发送微信/短信通知。",
-                        fontSize = 12.sp,
-                        color = Color(0xFF64748B)
+                        style = MaterialTheme.typography.bodySmall,
+                        color = InkTertiary
                     )
                 }
             },
@@ -1787,9 +1835,9 @@ private fun TmsPreviewDialog(
                         showForceConfirm = false
                         onForceConfirm()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB45309))
+                    colors = ButtonDefaults.buttonColors(containerColor = StatusLateInk)
                 ) {
-                    Text("确认强行考勤", fontWeight = FontWeight.Bold)
+                    Text("确认强行考勤", fontWeight = FontWeight.SemiBold)
                 }
             },
             dismissButton = {
@@ -1851,18 +1899,18 @@ private fun TmsMissingReportDialog(
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.FactCheck,
                 contentDescription = null,
-                tint = if (report.canSubmit) Color(0xFFB45309) else AccentGreen,
+                tint = if (report.canSubmit) StatusLateInk else StatusLeaveReplayInk,
                 modifier = Modifier.size(28.dp)
             )
         },
-        title = { Text("校管家考勤检查", fontWeight = FontWeight.Bold) },
+        title = { Text("校管家考勤检查", fontWeight = FontWeight.SemiBold) },
         text = {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 460.dp)
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(Spacing.Md)
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
@@ -1878,15 +1926,15 @@ private fun TmsMissingReportDialog(
                 }
                 Text(
                     text = "检查范围：${report.startDate} ~ ${report.endDate}，共检查 ${report.checkedCourseCount} 节课。",
-                    fontSize = 12.sp,
-                    color = Color(0xFF64748B)
+                    style = MaterialTheme.typography.bodySmall,
+                    color = InkTertiary
                 )
 
                 if (report.courses.isEmpty()) {
                     Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = Color(0xFFF0FDF4),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF86EFAC)),
+                        shape = RoundedCornerShape(Radii.Control),
+                        color = PaperSurface,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Hairline),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -1896,36 +1944,36 @@ private fun TmsMissingReportDialog(
                             Icon(
                                 Icons.Default.Check,
                                 contentDescription = null,
-                                tint = AccentGreen,
-                                modifier = Modifier.size(22.dp)
+                                tint = StatusLeaveReplayInk,
+                                modifier = Modifier.size(24.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "没有发现未考勤的班级，考勤已全部完成。",
-                                fontSize = 13.sp,
+                                style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Medium,
-                                color = Color(0xFF15803D)
+                                color = StatusLeaveReplayInk
                             )
                         }
                     }
                 } else {
                     Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = Color(0xFFFFFBEB),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFCD34D)),
+                        shape = RoundedCornerShape(Radii.Control),
+                        color = PaperSunken,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Hairline),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
+                        Column(modifier = Modifier.padding(Spacing.Md)) {
                             Text(
                                 text = "发现 ${report.courses.size} 节未考勤课程",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                color = Color(0xFF92400E)
+                                fontWeight = FontWeight.SemiBold,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = StatusLateInk
                             )
                             Text(
                                 text = "可一键考勤 ${report.submittableCount} 节，共 ${report.totalStudentCount} 人次。",
-                                fontSize = 12.sp,
-                                color = Color(0xFF92400E)
+                                style = MaterialTheme.typography.bodySmall,
+                                color = StatusLateInk
                             )
                         }
                     }
@@ -1936,26 +1984,26 @@ private fun TmsMissingReportDialog(
 
                 if (report.warnings.isNotEmpty()) {
                     Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = Color(0xFFF8FAFC),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                        shape = RoundedCornerShape(Radii.Control),
+                        color = PaperBackground,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Hairline),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
-                            modifier = Modifier.padding(10.dp),
-                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                            modifier = Modifier.padding(Spacing.Md),
+                            verticalArrangement = Arrangement.spacedBy(Spacing.Xs)
                         ) {
                             Text(
                                 text = "需要注意",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                                color = Color(0xFF475569)
+                                fontWeight = FontWeight.SemiBold,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = InkSecondary
                             )
                             report.warnings.forEach { warning ->
                                 Text(
                                     text = "• $warning",
-                                    fontSize = 11.sp,
-                                    color = Color(0xFF64748B)
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = InkTertiary
                                 )
                             }
                         }
@@ -1964,8 +2012,8 @@ private fun TmsMissingReportDialog(
 
                 Text(
                     text = "一键考勤会直接读取校管家课程学员名单，全部标记为已出勤并计费，不依赖本地名单匹配，因此名单对不上也能完成考勤。",
-                    fontSize = 11.sp,
-                    color = Color(0xFF64748B)
+                    style = MaterialTheme.typography.labelSmall,
+                    color = InkTertiary
                 )
             }
         },
@@ -1973,11 +2021,11 @@ private fun TmsMissingReportDialog(
             if (report.canSubmit) {
                 Button(
                     onClick = { showConfirm = true },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB45309))
+                    colors = ButtonDefaults.buttonColors(containerColor = StatusLateInk)
                 ) {
                     Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("一键考勤 (${report.submittableCount})", fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.width(Spacing.Sm))
+                    Text("一键考勤 (${report.submittableCount})", fontWeight = FontWeight.SemiBold)
                 }
             } else {
                 Button(onClick = onDismiss) {
@@ -1999,11 +2047,11 @@ private fun TmsMissingReportDialog(
                 Icon(
                     imageVector = Icons.Default.Check,
                     contentDescription = null,
-                    tint = Color(0xFFB45309),
+                    tint = StatusLateInk,
                     modifier = Modifier.size(28.dp)
                 )
             },
-            title = { Text("确认一键考勤？", fontWeight = FontWeight.Bold) },
+            title = { Text("确认一键考勤？", fontWeight = FontWeight.SemiBold) },
             text = {
                 Column(
                     modifier = Modifier
@@ -2014,21 +2062,21 @@ private fun TmsMissingReportDialog(
                 ) {
                     Text(
                         text = "将把以下 ${report.submittableCount} 节课的校管家学员全部标记为已出勤并计费，共 ${report.totalStudentCount} 人次。",
-                        fontSize = 13.sp,
-                        color = Color(0xFF334155)
+                        style = MaterialTheme.typography.bodySmall,
+                        color = InkSecondary
                     )
                     report.submittableCourses.forEach { course ->
                         Text(
                             text = "• ${course.date} ${course.className} ${course.displayTime}（${course.studentCount} 人）",
-                            fontSize = 12.sp,
-                            color = Color(0xFF475569)
+                            style = MaterialTheme.typography.bodySmall,
+                            color = InkSecondary
                         )
                     }
                     Text(
                         text = "该操作会直接写入校管家，无法在本应用内撤销，请确认日期和班级无误。",
-                        fontSize = 12.sp,
+                        style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Medium,
-                        color = Color(0xFFB45309)
+                        color = StatusLateInk
                     )
                 }
             },
@@ -2038,9 +2086,9 @@ private fun TmsMissingReportDialog(
                         showConfirm = false
                         onSubmit()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB45309))
+                    colors = ButtonDefaults.buttonColors(containerColor = StatusLateInk)
                 ) {
-                    Text("确认考勤", fontWeight = FontWeight.Bold)
+                    Text("确认考勤", fontWeight = FontWeight.SemiBold)
                 }
             },
             dismissButton = {
@@ -2056,42 +2104,42 @@ private fun TmsMissingReportDialog(
 private fun TmsMissingCourseCard(course: TmsMissingCourse) {
     val available = course.canSubmit
     Surface(
-        shape = RoundedCornerShape(10.dp),
-        color = if (available) Color(0xFFF8FAFC) else Color(0xFFFFFBEB),
+        shape = RoundedCornerShape(Radii.Control),
+        color = if (available) PaperBackground else PaperSunken,
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
-            if (available) Color(0xFFE2E8F0) else Color(0xFFFCD34D)
+            if (available) Hairline else Hairline
         ),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(10.dp)) {
+        Column(modifier = Modifier.padding(Spacing.Md)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = course.className,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    color = Color(0xFF1E293B),
+                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = InkPrimary,
                     modifier = Modifier.weight(1f)
                 )
                 Text(
                     text = course.date,
-                    fontSize = 11.sp,
-                    color = Color(0xFF64748B)
+                    style = MaterialTheme.typography.labelSmall,
+                    color = InkTertiary
                 )
             }
-            Spacer(modifier = Modifier.height(3.dp))
+            Spacer(modifier = Modifier.height(Spacing.Xs))
             Text(
                 text = "${course.displayTime} · 校管家学员 ${course.studentCount} 人 · 每人课消 ${
                     formatTmsCost(course.costAmount, course.unitCode)
                 }",
-                fontSize = 12.sp,
-                color = Color(0xFF475569)
+                style = MaterialTheme.typography.bodySmall,
+                color = InkSecondary
             )
             if (course.message != null) {
                 Text(
                     text = course.message,
-                    fontSize = 11.sp,
-                    color = Color(0xFFB45309)
+                    style = MaterialTheme.typography.labelSmall,
+                    color = StatusLateInk
                 )
             }
         }
@@ -2102,36 +2150,36 @@ private fun TmsMissingCourseCard(course: TmsMissingCourse) {
 private fun TmsPlanCard(plan: TmsCoursePlan) {
     val canSubmit = plan.canSubmit
     val cardColor = when {
-        canSubmit -> Color(0xFFF0FDF4)
-        plan.alreadyPointed -> Color(0xFFF8FAFC)
-        else -> Color(0xFFFFFBEB)
+        canSubmit -> PaperSurface
+        plan.alreadyPointed -> PaperBackground
+        else -> PaperSunken
     }
     val borderColor = when {
-        canSubmit -> Color(0xFF86EFAC)
-        plan.alreadyPointed -> Color(0xFFE2E8F0)
-        else -> Color(0xFFFCD34D)
+        canSubmit -> Hairline
+        plan.alreadyPointed -> Hairline
+        else -> Hairline
     }
 
     Surface(
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(Radii.Control),
         color = cardColor,
         border = androidx.compose.foundation.BorderStroke(1.dp, borderColor),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(10.dp)) {
+        Column(modifier = Modifier.padding(Spacing.Md)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = plan.className,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    color = Color(0xFF1E293B),
+                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = InkPrimary,
                     modifier = Modifier.weight(1f)
                 )
                 if (plan.displayTime.isNotBlank()) {
                     Text(
                         text = plan.displayTime,
-                        fontSize = 12.sp,
-                        color = Color(0xFF64748B)
+                        style = MaterialTheme.typography.bodySmall,
+                        color = InkTertiary
                     )
                 }
             }
@@ -2141,48 +2189,48 @@ private fun TmsPlanCard(plan: TmsCoursePlan) {
             if (message != null) {
                 Text(
                     text = message,
-                    fontSize = 12.sp,
+                    style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.Medium,
-                    color = if (plan.alreadyPointed) Color(0xFF64748B) else Color(0xFFB45309)
+                    color = if (plan.alreadyPointed) InkTertiary else StatusLateInk
                 )
                 if (plan.canForceSubmit) {
                     Text(
                         text = "可强行考勤：只提交已匹配 ${plan.matches.size} 人，未匹配学员跳过。",
-                        fontSize = 11.sp,
+                        style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Medium,
-                        color = Color(0xFFB45309)
+                        color = StatusLateInk
                     )
                 }
             } else {
                 Text(
                     text = "已匹配 ${plan.matches.size} 人：本地已到 ${plan.presentCount}（含迟到 ${plan.lateCount}） / 请假 ${plan.leaveCount}（不发回放 ${plan.leaveNoReplayCount}、发回放 ${plan.leaveReplayCount}） / 未到 ${plan.absentCount}",
-                    fontSize = 12.sp,
-                    color = Color(0xFF334155)
+                    style = MaterialTheme.typography.bodySmall,
+                    color = InkSecondary
                 )
                 Text(
                     text = "请假（不发回放）按事假提交且不计费；其余学员按出勤并计费",
-                    fontSize = 11.sp,
+                    style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Medium,
-                    color = Color(0xFF15803D)
+                    color = StatusLeaveReplayInk
                 )
                 if (plan.unmatchedAppStudents.isNotEmpty()) {
                     Text(
                         text = "未匹配、不会提交：${plan.unmatchedAppStudents.joinToString("、") { it.name }}",
-                        fontSize = 11.sp,
-                        color = Color(0xFFB45309)
+                        style = MaterialTheme.typography.labelSmall,
+                        color = StatusLateInk
                     )
                 }
                 if (plan.tmsOnlyStudentNames.isNotEmpty()) {
                     Text(
                         text = "校管家多出 ${plan.tmsOnlyStudentNames.size} 人，将保持原状态。",
-                        fontSize = 11.sp,
-                        color = Color(0xFF64748B)
+                        style = MaterialTheme.typography.labelSmall,
+                        color = InkTertiary
                     )
                 }
                 Text(
                     text = "每人课消：${formatTmsCost(plan.costAmount, plan.unitCode)}",
-                    fontSize = 11.sp,
-                    color = Color(0xFF64748B)
+                    style = MaterialTheme.typography.labelSmall,
+                    color = InkTertiary
                 )
             }
         }
@@ -2220,7 +2268,7 @@ private fun TmsSuccessDialog(
                     successCount > 0 -> "部分课程同步成功"
                     else -> "同步未完成"
                 },
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.SemiBold
             )
         },
         text = {
@@ -2231,27 +2279,27 @@ private fun TmsSuccessDialog(
                     .verticalScroll(rememberScrollState())
             ) {
                 if (results.isEmpty()) {
-                    Text("没有可提交的课程。", fontSize = 13.sp)
+                    Text("没有可提交的课程。", style = MaterialTheme.typography.bodySmall)
                 }
                 results.forEach { result ->
                     Text(
                         text = "${if (result.success) "成功" else "失败"}：${result.className}",
                         fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp,
-                        color = if (result.success) Color(0xFF15803D) else Color(0xFFB91C1C)
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (result.success) StatusLeaveReplayInk else Danger
                     )
                     Text(
                         text = result.message,
-                        fontSize = 12.sp,
-                        color = Color(0xFF475569)
+                        style = MaterialTheme.typography.bodySmall,
+                        color = InkSecondary
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                 }
                 if (successCount > 0) {
                     Text(
                         text = "建议再到校管家网页核对一次点名结果。",
-                        fontSize = 12.sp,
-                        color = Color(0xFF64748B)
+                        style = MaterialTheme.typography.bodySmall,
+                        color = InkTertiary
                     )
                 }
             }
@@ -2272,19 +2320,19 @@ private fun TmsErrorDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("无法同步校管家", fontWeight = FontWeight.Bold) },
+        title = { Text("无法同步校管家", fontWeight = FontWeight.SemiBold) },
         text = {
             Text(
                 text = state.message,
-                fontSize = 14.sp,
-                color = Color(0xFF334155)
+                style = MaterialTheme.typography.bodyMedium,
+                color = InkSecondary
             )
         },
         confirmButton = {
             if (state.needsSettings) {
                 Button(
                     onClick = onNavigateToSettings,
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                    colors = ButtonDefaults.buttonColors(containerColor = InkPrimary)
                 ) {
                     Text("去设置")
                 }
@@ -2309,6 +2357,7 @@ private fun TmsErrorDialog(
 /**
  * 平板横屏布局 (左侧班级与概览，右侧大网格点名)
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TabletLandscapeLayout(
     classList: List<ClassInfo>,
@@ -2343,46 +2392,44 @@ private fun TabletLandscapeLayout(
             modifier = Modifier
                 .width(280.dp)
                 .fillMaxHeight(),
-            color = Color.White,
-            shadowElevation = 1.dp
+            color = PaperSunken,
+            shadowElevation = 0.dp
         ) {
-            Column(modifier = Modifier.padding(12.dp)) {
+            Column(modifier = Modifier.padding(Spacing.Md)) {
                 Text(
                     text = "班级列表",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    color = Color(0xFF1E293B),
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    style = MaterialTheme.typography.titleSmall,
+                    color = InkPrimary,
+                    modifier = Modifier.padding(bottom = Spacing.Sm)
                 )
 
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(Spacing.Sm)) {
                     items(classList) { info ->
                         val isSelected = info.classCode == selectedClassCode
                         Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isSelected) Color(0xFFEFF6FF) else Color(0xFFF8FAFC),
+                            shape = RoundedCornerShape(Radii.Control),
+                            color = if (isSelected) PaperSurface else Color.Transparent,
                             border = androidx.compose.foundation.BorderStroke(
-                                1.5.dp,
-                                if (isSelected) PrimaryBlue else Color(0xFFE2E8F0)
+                                1.dp,
+                                if (isSelected) RedPen else Hairline
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { onSelectClass(info.classCode) }
                         ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
+                            Column(modifier = Modifier.padding(Spacing.Md)) {
                                 Text(
                                     text = info.classCode,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 15.sp,
-                                    color = if (isSelected) PrimaryBlue else Color(0xFF1E293B)
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = if (isSelected) RedPen else InkPrimary
                                 )
-                                Spacer(modifier = Modifier.height(3.dp))
+                                Spacer(modifier = Modifier.height(Spacing.Xs))
                                 Text(
                                     text = info.classTime,
-                                    fontSize = 12.sp,
-                                    color = Color(0xFF64748B)
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = InkTertiary
                                 )
-                                Spacer(modifier = Modifier.height(6.dp))
+                                Spacer(modifier = Modifier.height(Spacing.Sm))
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -2393,18 +2440,17 @@ private fun TabletLandscapeLayout(
                                             val offlineTotal = info.offlineCount
                                             if (offlineTotal > 0) info.presentCount.toFloat() / offlineTotal else if (info.totalCount > 0) 1f else 0f
                                         },
-                                        color = AccentGreen,
-                                        trackColor = Color(0xFFE2E8F0),
+                                        color = RedPen,
+                                        trackColor = Hairline,
                                         modifier = Modifier
                                             .weight(1f)
-                                            .height(5.dp)
+                                            .height(4.dp)
                                     )
-                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Spacer(modifier = Modifier.width(Spacing.Sm))
                                     Text(
                                         text = if (info.onlineCount > 0) "${info.presentCount}/${info.offlineCount}" else "${info.presentCount}/${info.totalCount}",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = Color(0xFF475569)
+                                        style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
+                                        color = InkSecondary
                                     )
                                 }
                             }
@@ -2419,122 +2465,141 @@ private fun TabletLandscapeLayout(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
-                .padding(16.dp)
+                .padding(Spacing.Lg)
         ) {
-            // 操作工具条
+            // 操作工具条：统计一行，操作在窄屏自动换行
+            val offlineTotal = (totalCount - onlineCount).coerceAtLeast(0)
+            val countText = if (onlineCount > 0) {
+                "实到 $presentCount / 线下应到 $offlineTotal（线上 $onlineCount）"
+            } else {
+                "实到 $presentCount / $totalCount"
+            }
+            var showMoreMenu by remember { mutableStateOf(false) }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    val offlineTotal = (totalCount - onlineCount).coerceAtLeast(0)
-                    val countText = if (onlineCount > 0) {
-                        "实到: $presentCount / 线下应到 $offlineTotal (线上: $onlineCount)"
-                    } else {
-                        "实到: $presentCount / $totalCount"
-                    }
-                    Text(
-                        text = countText,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF1E293B)
-                    )
-                }
-
-                var showMoreMenu by remember { mutableStateOf(false) }
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // 手动加人（跨班调入）
-                    OutlinedButton(onClick = onShowAddStudentDialog) {
-                        Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("加人")
-                    }
-                    // 一键全到 / 一键取消全到 动态切换
-                    FilledTonalButton(onClick = onToggleAllPresent) {
+                Text(
+                    text = countText,
+                    style = MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = "tnum"),
+                    color = InkPrimary
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                // 更多操作下拉菜单
+                Box {
+                    IconButton(onClick = { showMoreMenu = true }) {
                         Icon(
-                            imageVector = if (isAllPresent) Icons.Default.Close else Icons.Default.DoneAll,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
+                            Icons.Default.MoreVert,
+                            contentDescription = "更多操作",
+                            tint = InkSecondary
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(if (isAllPresent) "取消全到" else "一键全到")
                     }
-                    // 席卡 PDF 按钮
-                    OutlinedButton(
-                        onClick = onShowNameplateDialog,
-                        enabled = !isExporting
+                    DropdownMenu(
+                        expanded = showMoreMenu,
+                        onDismissRequest = { showMoreMenu = false }
                     ) {
-                        Icon(Icons.Default.Badge, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("席卡PDF")
-                    }
-                    // 分享发送按钮（核心主要操作，高亮突出，永不遮挡）
-                    Button(
-                        onClick = onExportAndShare,
-                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
-                        enabled = !isExporting
-                    ) {
-                        if (isExporting) {
-                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                        } else {
-                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("发长图", fontWeight = FontWeight.Bold)
-                        }
-                    }
-                    // 更多操作下拉菜单
-                    Box {
-                        IconButton(onClick = { showMoreMenu = true }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "更多操作", tint = Color(0xFF475569))
-                        }
-                        DropdownMenu(
-                            expanded = showMoreMenu,
-                            onDismissRequest = { showMoreMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("下载长图 (存相册)") },
-                                leadingIcon = { Icon(Icons.Default.Download, contentDescription = null, tint = PrimaryBlue) },
-                                onClick = {
-                                    showMoreMenu = false
-                                    onDownloadImage()
-                                },
-                                enabled = !isExporting
-                            )
-                            DropdownMenuItem(
-                                text = { Text("自动同步校管家考勤") },
-                                leadingIcon = { Icon(Icons.Default.CloudUpload, contentDescription = null, tint = PrimaryBlue) },
-                                onClick = {
-                                    showMoreMenu = false
-                                    onStartTmsSync()
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("重置本班签到") },
-                                leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null, tint = Color(0xFFF59E0B)) },
-                                onClick = {
-                                    showMoreMenu = false
-                                    onReset()
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("全部清空 (所有班)", color = Color(0xFFEF4444)) },
-                                leadingIcon = { Icon(Icons.Default.DeleteSweep, contentDescription = null, tint = Color(0xFFEF4444)) },
-                                onClick = {
-                                    showMoreMenu = false
-                                    onResetAll()
-                                }
-                            )
-                        }
+                        DropdownMenuItem(
+                            text = { Text("下载长图 (存相册)") },
+                            leadingIcon = { Icon(Icons.Default.Download, contentDescription = null, tint = InkSecondary) },
+                            onClick = {
+                                showMoreMenu = false
+                                onDownloadImage()
+                            },
+                            enabled = !isExporting
+                        )
+                        DropdownMenuItem(
+                            text = { Text("自动同步校管家考勤") },
+                            leadingIcon = { Icon(Icons.Default.CloudUpload, contentDescription = null, tint = InkSecondary) },
+                            onClick = {
+                                showMoreMenu = false
+                                onStartTmsSync()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("重置本班签到") },
+                            leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null, tint = InkSecondary) },
+                            onClick = {
+                                showMoreMenu = false
+                                onReset()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("全部清空 (所有班)", color = Danger) },
+                            leadingIcon = { Icon(Icons.Default.DeleteSweep, contentDescription = null, tint = Danger) },
+                            onClick = {
+                                showMoreMenu = false
+                                onResetAll()
+                            }
+                        )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(Spacing.Sm))
+
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.Sm, Alignment.End),
+                verticalArrangement = Arrangement.spacedBy(Spacing.Sm)
+            ) {
+                // 手动加人（跨班调入）
+                OutlinedButton(
+                    onClick = onShowAddStudentDialog,
+                    modifier = Modifier.height(Sizes.CompactControlHeight),
+                    contentPadding = PaddingValues(horizontal = Spacing.Md)
+                ) {
+                    Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(Spacing.Sm))
+                    Text("加人")
+                }
+                // 一键全到 / 一键取消全到 动态切换
+                FilledTonalButton(
+                    onClick = onToggleAllPresent,
+                    modifier = Modifier.height(Sizes.CompactControlHeight),
+                    contentPadding = PaddingValues(horizontal = Spacing.Md)
+                ) {
+                    Icon(
+                        imageVector = if (isAllPresent) Icons.Default.Close else Icons.Default.DoneAll,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(Spacing.Sm))
+                    Text(if (isAllPresent) "取消全到" else "一键全到")
+                }
+                // 席卡 PDF 按钮
+                OutlinedButton(
+                    onClick = onShowNameplateDialog,
+                    enabled = !isExporting,
+                    modifier = Modifier.height(Sizes.CompactControlHeight),
+                    contentPadding = PaddingValues(horizontal = Spacing.Md)
+                ) {
+                    Icon(Icons.Default.Badge, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(Spacing.Sm))
+                    Text("席卡PDF")
+                }
+                // 分享发送按钮（核心主要操作）
+                Button(
+                    onClick = onExportAndShare,
+                    enabled = !isExporting,
+                    modifier = Modifier.height(Sizes.CompactControlHeight),
+                    contentPadding = PaddingValues(horizontal = Spacing.Md)
+                ) {
+                    if (isExporting) {
+                        CircularProgressIndicator(
+                            color = InkOnDark,
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(Spacing.Sm))
+                        Text("发长图")
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(Spacing.Md))
 
             // 临时调出提示（人在外班，原班留显示 + 一键调回）
             MovedOutNotice(
@@ -2585,6 +2650,7 @@ private fun TabletLandscapeLayout(
 /**
  * 手机竖屏布局 (顶部班级 Tab，中部 2 列大字卡片，底部固定快速操作)
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PhonePortraitLayout(
     classList: List<ClassInfo>,
@@ -2613,13 +2679,13 @@ private fun PhonePortraitLayout(
     onReturnStudent: (com.jf.checkin.data.model.Student) -> Unit
 ) {
     val context = LocalContext.current
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize().background(PaperBackground)) {
         // 班级滑动选择 Tab
         val selectedIndex = classList.indexOfFirst { it.classCode == selectedClassCode }.coerceAtLeast(0)
         ScrollableTabRow(
             selectedTabIndex = selectedIndex,
-            edgePadding = 12.dp,
-            containerColor = Color.White
+            edgePadding = Spacing.Md,
+            containerColor = PaperSurface
         ) {
             classList.forEachIndexed { index, info ->
                 Tab(
@@ -2629,12 +2695,13 @@ private fun PhonePortraitLayout(
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
                                 text = info.classCode,
-                                fontWeight = if (index == selectedIndex) FontWeight.Bold else FontWeight.Normal
+                                style = MaterialTheme.typography.titleSmall,
+                                color = if (index == selectedIndex) RedPen else InkSecondary
                             )
                             Text(
                                 text = if (info.onlineCount > 0) "${info.presentCount}/${info.offlineCount}" else "${info.presentCount}/${info.totalCount}",
-                                fontSize = 11.sp,
-                                color = if (index == selectedIndex) PrimaryBlue else Color(0xFF94A3B8)
+                                style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
+                                color = if (index == selectedIndex) RedPen else InkTertiary
                             )
                         }
                     }
@@ -2642,136 +2709,145 @@ private fun PhonePortraitLayout(
             }
         }
 
-        // 快速统计与一键操作栏
+        // 快速统计与一键操作栏：统计与按钮分两行，360dp 不拥挤
         var showMoreMenu by remember { mutableStateOf(false) }
 
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            color = Color.White,
-            shadowElevation = 1.dp
+            color = PaperSurface,
+            shadowElevation = 0.dp
         ) {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(horizontal = Spacing.Md, vertical = Spacing.Sm)
             ) {
                 val offlineTotal = (totalCount - onlineCount).coerceAtLeast(0)
                 val countText = if (onlineCount > 0) {
-                    "$presentCount/$offlineTotal (线上$onlineCount)"
+                    "实到 $presentCount / 线下 $offlineTotal（线上 $onlineCount）"
                 } else {
-                    "$presentCount/$totalCount"
+                    "实到 $presentCount / $totalCount"
                 }
                 Text(
                     text = countText,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1E293B),
+                    style = MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = "tnum"),
+                    color = InkPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Spacer(modifier = Modifier.weight(1f))
 
-                // 手动加人
-                OutlinedButton(
-                    onClick = onShowAddStudentDialog,
-                    modifier = Modifier.height(36.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp)
+                Spacer(modifier = Modifier.height(Spacing.Sm))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(15.dp))
-                    Spacer(modifier = Modifier.width(3.dp))
-                    Text("加人", fontSize = 12.sp)
-                }
-                Spacer(modifier = Modifier.width(6.dp))
-
-                // 一键全到 / 取消全到 动态切换
-                FilledTonalButton(
-                    onClick = onToggleAllPresent,
-                    modifier = Modifier.height(36.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp)
-                ) {
-                    Icon(
-                        imageVector = if (isAllPresent) Icons.Default.Close else Icons.Default.DoneAll,
-                        contentDescription = null,
-                        modifier = Modifier.size(15.dp)
-                    )
-                    Spacer(modifier = Modifier.width(3.dp))
-                    Text(if (isAllPresent) "取消" else "全到", fontSize = 12.sp)
-                }
-                Spacer(modifier = Modifier.width(6.dp))
-
-                // 分享发送按钮（主要核心操作，高亮蓝色，绝不遮挡）
-                Button(
-                    onClick = onExportAndShare,
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
-                    modifier = Modifier.height(36.dp),
-                    contentPadding = PaddingValues(horizontal = 10.dp),
-                    enabled = !isExporting
-                ) {
-                    if (isExporting) {
-                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(15.dp), strokeWidth = 2.dp)
-                    } else {
-                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(15.dp))
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text("发长图", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-                Spacer(modifier = Modifier.width(2.dp))
-
-                // 更多操作下拉菜单
-                Box {
-                    IconButton(
-                        onClick = { showMoreMenu = true },
-                        modifier = Modifier.size(36.dp)
+                    // 手动加人
+                    OutlinedButton(
+                        onClick = onShowAddStudentDialog,
+                        modifier = Modifier.height(Sizes.ControlHeight),
+                        contentPadding = PaddingValues(horizontal = Spacing.Sm)
                     ) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "更多操作", tint = Color(0xFF475569))
+                        Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(Spacing.Xs))
+                        Text("加人", style = MaterialTheme.typography.labelMedium)
                     }
-                    DropdownMenu(
-                        expanded = showMoreMenu,
-                        onDismissRequest = { showMoreMenu = false }
+                    Spacer(modifier = Modifier.width(Spacing.Sm))
+
+                    // 一键全到 / 取消全到 动态切换
+                    FilledTonalButton(
+                        onClick = onToggleAllPresent,
+                        modifier = Modifier.height(Sizes.ControlHeight),
+                        contentPadding = PaddingValues(horizontal = Spacing.Sm)
                     ) {
-                        DropdownMenuItem(
-                            text = { Text("存长图到相册") },
-                            leadingIcon = { Icon(Icons.Default.Download, contentDescription = null, tint = PrimaryBlue) },
-                            onClick = {
-                                showMoreMenu = false
-                                onDownloadImage()
-                            },
-                            enabled = !isExporting
+                        Icon(
+                            imageVector = if (isAllPresent) Icons.Default.Close else Icons.Default.DoneAll,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
                         )
-                        DropdownMenuItem(
-                            text = { Text("席卡打印 / PDF") },
-                            leadingIcon = { Icon(Icons.Default.Badge, contentDescription = null, tint = Color(0xFF0F766E)) },
-                            onClick = {
-                                showMoreMenu = false
-                                onShowNameplateDialog()
-                            },
-                            enabled = !isExporting
-                        )
-                        DropdownMenuItem(
-                            text = { Text("自动同步校管家考勤") },
-                            leadingIcon = { Icon(Icons.Default.CloudUpload, contentDescription = null, tint = PrimaryBlue) },
-                            onClick = {
-                                showMoreMenu = false
-                                onStartTmsSync()
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("重置本班签到") },
-                            leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null, tint = Color(0xFFF59E0B)) },
-                            onClick = {
-                                showMoreMenu = false
-                                onReset()
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("全部清空 (所有班)", color = Color(0xFFEF4444)) },
-                            leadingIcon = { Icon(Icons.Default.DeleteSweep, contentDescription = null, tint = Color(0xFFEF4444)) },
-                            onClick = {
-                                showMoreMenu = false
-                                onResetAll()
-                            }
-                        )
+                        Spacer(modifier = Modifier.width(Spacing.Xs))
+                        Text(if (isAllPresent) "取消" else "全到", style = MaterialTheme.typography.labelMedium)
+                    }
+                    Spacer(modifier = Modifier.width(Spacing.Sm))
+
+                    // 分享发送按钮（主要核心操作）
+                    Button(
+                        onClick = onExportAndShare,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(Sizes.ControlHeight),
+                        contentPadding = PaddingValues(horizontal = Spacing.Sm),
+                        enabled = !isExporting
+                    ) {
+                        if (isExporting) {
+                            CircularProgressIndicator(
+                                color = InkOnDark,
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(Spacing.Xs))
+                            Text("发长图", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(Spacing.Xs))
+
+                    // 更多操作下拉菜单
+                    Box {
+                        IconButton(
+                            onClick = { showMoreMenu = true },
+                            modifier = Modifier.size(Sizes.ControlHeight)
+                        ) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "更多操作", tint = InkSecondary)
+                        }
+                        DropdownMenu(
+                            expanded = showMoreMenu,
+                            onDismissRequest = { showMoreMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("存长图到相册") },
+                                leadingIcon = { Icon(Icons.Default.Download, contentDescription = null, tint = InkSecondary) },
+                                onClick = {
+                                    showMoreMenu = false
+                                    onDownloadImage()
+                                },
+                                enabled = !isExporting
+                            )
+                            DropdownMenuItem(
+                                text = { Text("席卡打印 / PDF") },
+                                leadingIcon = { Icon(Icons.Default.Badge, contentDescription = null, tint = InkSecondary) },
+                                onClick = {
+                                    showMoreMenu = false
+                                    onShowNameplateDialog()
+                                },
+                                enabled = !isExporting
+                            )
+                            DropdownMenuItem(
+                                text = { Text("自动同步校管家考勤") },
+                                leadingIcon = { Icon(Icons.Default.CloudUpload, contentDescription = null, tint = InkSecondary) },
+                                onClick = {
+                                    showMoreMenu = false
+                                    onStartTmsSync()
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("重置本班签到") },
+                                leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null, tint = InkSecondary) },
+                                onClick = {
+                                    showMoreMenu = false
+                                    onReset()
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("全部清空 (所有班)", color = Danger) },
+                                leadingIcon = { Icon(Icons.Default.DeleteSweep, contentDescription = null, tint = Danger) },
+                                onClick = {
+                                    showMoreMenu = false
+                                    onResetAll()
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -2781,11 +2857,11 @@ private fun PhonePortraitLayout(
         MovedOutNotice(
             students = movedOutStudents,
             onReturnStudent = onReturnStudent,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+            modifier = Modifier.padding(horizontal = Spacing.Md, vertical = Spacing.Xs)
         )
         OnlineStudentsNotice(
             students = currentStudents.filter { it.status == AttendanceStatus.ONLINE },
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+            modifier = Modifier.padding(horizontal = Spacing.Md, vertical = Spacing.Xs)
         )
 
         // 线下学生优先排前，线上学生排在末尾
@@ -2794,9 +2870,9 @@ private fun PhonePortraitLayout(
         }
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
-            contentPadding = PaddingValues(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(Spacing.Md),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.Md),
+            verticalArrangement = Arrangement.spacedBy(Spacing.Md),
             modifier = Modifier.weight(1f)
         ) {
             items(sortedStudents, key = { it.studentId }) { student ->
@@ -2831,45 +2907,55 @@ private fun MovedOutNotice(
 ) {
     if (students.isEmpty()) return
     Surface(
-        shape = RoundedCornerShape(10.dp),
-        color = Color(0xFFFEFCE8),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A)),
+        shape = RoundedCornerShape(Radii.Control),
+        color = PaperSurface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Hairline),
         modifier = modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-            Text(
-                text = "临时调出（${students.size}人）",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF92400E)
-            )
-            Spacer(modifier = Modifier.height(4.dp))
+        Column(modifier = Modifier.padding(horizontal = Spacing.Md, vertical = Spacing.Sm)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .background(
+                            StatusLateInk,
+                            androidx.compose.foundation.shape.CircleShape
+                        )
+                )
+                Spacer(modifier = Modifier.width(Spacing.Sm))
+                Text(
+                    text = "临时调出（${students.size}人）",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = InkPrimary
+                )
+            }
+            Spacer(modifier = Modifier.height(Spacing.Xs))
             students.forEach { student ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 2.dp),
+                        .padding(vertical = Spacing.Xs),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = "${student.name}(${student.studentId}) → ${student.classCode}",
-                        fontSize = 13.sp,
-                        color = Color(0xFF78350F),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = InkSecondary,
                         modifier = Modifier.weight(1f)
                     )
                     OutlinedButton(
                         onClick = { onReturnStudent(student) },
-                        modifier = Modifier.height(30.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp)
+                        modifier = Modifier.height(32.dp),
+                        contentPadding = PaddingValues(horizontal = Spacing.Sm)
                     ) {
-                        Text("调回", fontSize = 12.sp)
+                        Text("调回", style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }
         }
     }
-    Spacer(modifier = Modifier.height(8.dp))
+    Spacer(modifier = Modifier.height(Spacing.Sm))
 }
 
 /**
@@ -2882,41 +2968,39 @@ private fun OnlineStudentsNotice(
 ) {
     if (students.isEmpty()) return
     Surface(
-        shape = RoundedCornerShape(10.dp),
-        color = Color(0xFFF3E8FF),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFD8B4FE)),
+        shape = RoundedCornerShape(Radii.Control),
+        color = PaperSurface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Hairline),
         modifier = modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+        Column(modifier = Modifier.padding(horizontal = Spacing.Md, vertical = Spacing.Sm)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = Icons.Default.Videocam,
                     contentDescription = null,
-                    tint = Color(0xFF7E22CE),
+                    tint = StatusOnlineInk,
                     modifier = Modifier.size(16.dp)
                 )
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.width(Spacing.Sm))
                 Text(
                     text = "线上/转线上学生（免签，共 ${students.size} 人）",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF6B21A8)
+                    style = MaterialTheme.typography.titleSmall,
+                    color = InkPrimary
                 )
             }
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(Spacing.Xs))
             val itemsText = students.joinToString("、") { student ->
                 val tag = if (StudentCsvParser.isOfflineStudent(student)) "转线上" else "线上"
                 "${student.name} [${tag}]"
             }
             Text(
                 text = itemsText,
-                fontSize = 12.sp,
-                color = Color(0xFF581C87),
-                lineHeight = 18.sp
+                style = MaterialTheme.typography.bodySmall,
+                color = InkSecondary
             )
         }
     }
-    Spacer(modifier = Modifier.height(8.dp))
+    Spacer(modifier = Modifier.height(Spacing.Sm))
 }
 
 @Composable
@@ -2925,36 +3009,36 @@ private fun EmptyDataView(
     onNavigateToSettings: () -> Unit
 ) {
     Box(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(PaperBackground)
+            .padding(Spacing.Xxl),
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(
                 imageVector = Icons.Default.Language,
                 contentDescription = null,
-                modifier = Modifier.size(64.dp),
-                tint = Color(0xFF94A3B8)
+                modifier = Modifier.size(56.dp),
+                tint = InkTertiary
             )
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(Spacing.Lg))
             Text(
                 text = "暂无学生名单数据",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF334155)
+                style = MaterialTheme.typography.titleLarge,
+                color = InkPrimary
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(Spacing.Sm))
             Text(
                 text = "请点击下方按钮打开网站下载名单，或在设置中手动导入 CSV 文件",
-                fontSize = 14.sp,
-                color = Color(0xFF64748B),
-                modifier = Modifier.padding(horizontal = 24.dp)
+                style = MaterialTheme.typography.bodyMedium,
+                color = InkSecondary,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.padding(horizontal = Spacing.Xxl)
             )
-            Spacer(modifier = Modifier.height(20.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(
-                    onClick = onNavigateToBrowser,
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
-                ) {
+            Spacer(modifier = Modifier.height(Spacing.Xl))
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Md)) {
+                Button(onClick = onNavigateToBrowser) {
                     Text("打开内置网站下载")
                 }
                 OutlinedButton(onClick = onNavigateToSettings) {

@@ -2,32 +2,33 @@ package com.jf.checkin.ui.rollcall
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.EventBusy
-import androidx.compose.material.icons.filled.PlayCircle
-import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,22 +38,26 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.jf.checkin.data.model.AttendanceStatus
 import com.jf.checkin.data.model.Student
-import com.jf.checkin.ui.theme.AccentBlue
-import com.jf.checkin.ui.theme.AccentGreen
-import com.jf.checkin.ui.theme.AccentOrange
-import com.jf.checkin.ui.theme.AccentPurple
-import com.jf.checkin.ui.theme.CardBackgroundOnline
 import com.jf.checkin.data.parser.StudentCsvParser
-import com.jf.checkin.ui.theme.CardBackgroundPresent
-import com.jf.checkin.ui.theme.CardBackgroundUnchecked
-import com.jf.checkin.ui.theme.CardBorderOnline
-import com.jf.checkin.ui.theme.CardBorderPresent
+import com.jf.checkin.ui.theme.BadgeBackground
+import com.jf.checkin.ui.theme.Danger
+import com.jf.checkin.ui.theme.Hairline
+import com.jf.checkin.ui.theme.InkPrimary
+import com.jf.checkin.ui.theme.InkSecondary
+import com.jf.checkin.ui.theme.InkTertiary
+import com.jf.checkin.ui.theme.PaperSurface
+import com.jf.checkin.ui.theme.Radii
+import com.jf.checkin.ui.theme.RedPen
+import com.jf.checkin.ui.theme.Sizes
+import com.jf.checkin.ui.theme.Spacing
+import com.jf.checkin.ui.theme.StatusLateInk
+import com.jf.checkin.ui.theme.StatusLeaveInk
+import com.jf.checkin.ui.theme.StatusLeaveReplayInk
+import com.jf.checkin.ui.theme.StatusOnlineInk
+import com.jf.checkin.ui.theme.StatusUncheckedInk
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -68,23 +73,30 @@ fun StudentCard(
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
-    val (cardBgColor, borderColor, statusTextColor) = when (student.status) {
-        AttendanceStatus.PRESENT -> Triple(CardBackgroundPresent, CardBorderPresent, AccentGreen)
-        AttendanceStatus.LATE -> Triple(Color(0xFFFEF3C7), Color(0xFFFCD34D), AccentOrange)
-        AttendanceStatus.LEAVE -> Triple(Color(0xFFE0E7FF), Color(0xFFA5B4FC), AccentBlue)
-        AttendanceStatus.LEAVE_REPLAY -> Triple(Color(0xFFCCFBF1), Color(0xFF5EEAD4), Color(0xFF0F766E))
-        AttendanceStatus.ONLINE -> Triple(CardBackgroundOnline, CardBorderOnline, AccentPurple)
-        AttendanceStatus.UNCHECKED -> Triple(CardBackgroundUnchecked, Color(0xFFE2E8F0), Color(0xFF94A3B8))
+    val statusAccent = when (student.status) {
+        AttendanceStatus.PRESENT -> RedPen
+        AttendanceStatus.LATE -> StatusLateInk
+        AttendanceStatus.LEAVE -> StatusLeaveInk
+        AttendanceStatus.LEAVE_REPLAY -> StatusLeaveReplayInk
+        AttendanceStatus.ONLINE -> StatusOnlineInk
+        AttendanceStatus.UNCHECKED -> StatusUncheckedInk
+    }
+
+    val statusLabel = when (student.status) {
+        AttendanceStatus.PRESENT -> "已到"
+        AttendanceStatus.LATE -> "迟到"
+        AttendanceStatus.LEAVE -> "请假·无回放"
+        AttendanceStatus.LEAVE_REPLAY -> "请假·回放"
+        AttendanceStatus.ONLINE -> if (StudentCsvParser.isOfflineStudent(student)) "转线上 · 免签" else "线上 · 免签"
+        AttendanceStatus.UNCHECKED -> "未到"
     }
 
     Box(modifier = modifier) {
         Card(
-            shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = cardBgColor),
-            border = BorderStroke(1.5.dp, borderColor),
-            elevation = CardDefaults.cardElevation(
-                defaultElevation = if (student.status == AttendanceStatus.PRESENT || student.status == AttendanceStatus.ONLINE) 2.dp else 0.dp
-            ),
+            shape = RoundedCornerShape(Radii.Card),
+            colors = CardDefaults.cardColors(containerColor = PaperSurface),
+            border = BorderStroke(1.dp, Hairline),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
             modifier = Modifier
                 .fillMaxWidth()
                 .combinedClickable(
@@ -98,182 +110,174 @@ fun StudentCard(
                     onLongClick = { showMenu = true }
                 )
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                // 名字上方展示五位数学号
-                Text(
-                    text = student.studentId,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color(0xFF64748B)
+            // 中性纸面卡片 + 左侧 3dp 状态色边
+            Row(modifier = Modifier.height(IntrinsicSize.Min)) {
+                Box(
+                    modifier = Modifier
+                        .width(Sizes.StatusEdge)
+                        .fillMaxHeight()
+                        .background(statusAccent)
                 )
-
-                Spacer(modifier = Modifier.height(2.dp))
-
-                // 大字姓名
-                Text(
-                    text = student.name,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1E293B),
-                    maxLines = 1
-                )
-
-                // 备注（手动调入来源等），为空则不占位
-                if (student.remark.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(2.dp))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.Md, vertical = Spacing.Md),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
                     Text(
-                        text = student.remark,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color(0xFF6366F1),
-                        maxLines = 2
+                        text = student.studentId,
+                        style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
+                        color = InkTertiary
                     )
-                }
-                // 手动添加角标
-                if (student.isManual) {
-                    Spacer(modifier = Modifier.height(2.dp))
+
+                    Spacer(modifier = Modifier.height(Spacing.Xs))
+
                     Text(
-                        text = "调入",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF059669)
-                    )
-                }
-                // 临时调班来源（接收班显示从哪调来）
-                if (student.originalClassCode.isNotBlank() && student.originalClassCode != student.classCode) {
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "由 ${student.originalClassCode} 临时调入",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color(0xFF0F766E),
+                        text = student.name,
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = InkPrimary,
                         maxLines = 1
                     )
-                }
 
-                Spacer(modifier = Modifier.height(6.dp))
-
-                // 状态指示徽章
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = when (student.status) {
-                        AttendanceStatus.PRESENT -> AccentGreen
-                        AttendanceStatus.LATE -> AccentOrange
-                        AttendanceStatus.LEAVE -> AccentBlue
-                        AttendanceStatus.LEAVE_REPLAY -> Color(0xFF0F766E)
-                        AttendanceStatus.ONLINE -> AccentPurple
-                        AttendanceStatus.UNCHECKED -> Color(0xFFCBD5E1)
-                    },
-                    modifier = Modifier.height(26.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (student.status == AttendanceStatus.PRESENT) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                        } else if (student.status == AttendanceStatus.ONLINE) {
-                            Icon(
-                                imageVector = Icons.Default.Videocam,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                        }
+                    if (student.remark.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(Spacing.Xs))
                         Text(
-                            text = when (student.status) {
-                                AttendanceStatus.PRESENT -> "已到"
-                                AttendanceStatus.LATE -> "迟到"
-                                AttendanceStatus.LEAVE -> "请假·无回放"
-                                AttendanceStatus.LEAVE_REPLAY -> "请假·回放"
-                                AttendanceStatus.ONLINE -> if (StudentCsvParser.isOfflineStudent(student)) "转线上 · 免签" else "线上 · 免签"
-                                AttendanceStatus.UNCHECKED -> "未到"
-                            },
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color.White
+                            text = student.remark,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = InkSecondary,
+                            maxLines = 2
                         )
+                    }
+                    if (student.isManual) {
+                        Spacer(modifier = Modifier.height(Spacing.Xs))
+                        Text(
+                            text = "调入",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = InkTertiary
+                        )
+                    }
+                    if (student.originalClassCode.isNotBlank() && student.originalClassCode != student.classCode) {
+                        Spacer(modifier = Modifier.height(Spacing.Xs))
+                        Text(
+                            text = "由 ${student.originalClassCode} 临时调入",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = InkTertiary,
+                            maxLines = 1
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(Spacing.Sm))
+
+                    Surface(
+                        shape = RoundedCornerShape(Radii.Chip),
+                        color = BadgeBackground,
+                        modifier = Modifier.height(24.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = Spacing.Sm, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier.size(14.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (student.status == AttendanceStatus.PRESENT) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        tint = statusAccent,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .background(statusAccent, CircleShape)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(Spacing.Sm))
+                            Text(
+                                text = statusLabel,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = InkPrimary
+                            )
+                        }
                     }
                 }
             }
         }
 
-        // 长按弹出快捷状态菜单
+        // 长按弹出快捷状态菜单：统一中性文字 + 语义圆点
         DropdownMenu(
             expanded = showMenu,
             onDismissRequest = { showMenu = false }
         ) {
-            DropdownMenuItem(
-                text = { Text("已到 (√)", color = AccentGreen, fontWeight = FontWeight.Bold) },
-                leadingIcon = { Icon(Icons.Default.Check, contentDescription = null, tint = AccentGreen) },
+            StatusMenuItem(
+                label = "已到",
+                accent = RedPen,
+                checked = true,
                 onClick = {
                     onSetStatus(AttendanceStatus.PRESENT)
                     showMenu = false
                 }
             )
-            DropdownMenuItem(
-                text = { Text("迟到", color = AccentOrange, fontWeight = FontWeight.SemiBold) },
-                leadingIcon = { Icon(Icons.Default.Schedule, contentDescription = null, tint = AccentOrange) },
+            StatusMenuItem(
+                label = "迟到",
+                accent = StatusLateInk,
                 onClick = {
                     onSetStatus(AttendanceStatus.LATE)
                     showMenu = false
                 }
             )
-            DropdownMenuItem(
-                text = { Text("请假（不发回放）", color = AccentBlue, fontWeight = FontWeight.SemiBold) },
-                leadingIcon = { Icon(Icons.Default.EventBusy, contentDescription = null, tint = AccentBlue) },
+            StatusMenuItem(
+                label = "请假（不发回放）",
+                accent = StatusLeaveInk,
                 onClick = {
                     onSetStatus(AttendanceStatus.LEAVE)
                     showMenu = false
                 }
             )
-            DropdownMenuItem(
-                text = { Text("请假（发回放）", color = Color(0xFF0F766E), fontWeight = FontWeight.SemiBold) },
-                leadingIcon = { Icon(Icons.Default.PlayCircle, contentDescription = null, tint = Color(0xFF0F766E)) },
+            StatusMenuItem(
+                label = "请假（发回放）",
+                accent = StatusLeaveReplayInk,
                 onClick = {
                     onSetStatus(AttendanceStatus.LEAVE_REPLAY)
                     showMenu = false
                 }
             )
-            DropdownMenuItem(
-                text = { Text(if (StudentCsvParser.isOfflineStudent(student)) "转线上" else "线上", color = AccentPurple, fontWeight = FontWeight.SemiBold) },
-                leadingIcon = { Icon(Icons.Default.Videocam, contentDescription = null, tint = AccentPurple) },
+            StatusMenuItem(
+                label = if (StudentCsvParser.isOfflineStudent(student)) "转线上" else "线上",
+                accent = StatusOnlineInk,
                 onClick = {
                     onSetStatus(AttendanceStatus.ONLINE)
                     showMenu = false
                 }
             )
-            DropdownMenuItem(
-                text = { Text("设为未到", color = Color(0xFF64748B)) },
-                leadingIcon = { Icon(Icons.Default.Close, contentDescription = null, tint = Color(0xFF64748B)) },
+            StatusMenuItem(
+                label = "设为未到",
+                accent = StatusUncheckedInk,
+                icon = Icons.Default.Close,
                 onClick = {
                     onSetStatus(AttendanceStatus.UNCHECKED)
                     showMenu = false
                 }
             )
             DropdownMenuItem(
-                text = { Text("备注…", color = Color(0xFF4F46E5)) },
-                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, tint = Color(0xFF4F46E5)) },
+                text = { Text("备注…", color = InkPrimary) },
+                leadingIcon = {
+                    Icon(Icons.Default.Edit, contentDescription = null, tint = InkSecondary)
+                },
                 onClick = {
                     showMenu = false
                     onEditRemark()
                 }
             )
             DropdownMenuItem(
-                text = { Text("调到其他班…", color = Color(0xFF0F766E)) },
-                leadingIcon = { Icon(Icons.Default.SwapHoriz, contentDescription = null, tint = Color(0xFF0F766E)) },
+                text = { Text("调到其他班…", color = InkPrimary) },
+                leadingIcon = {
+                    Icon(Icons.Default.SwapHoriz, contentDescription = null, tint = InkSecondary)
+                },
                 onClick = {
                     showMenu = false
                     onMoveClass()
@@ -281,8 +285,10 @@ fun StudentCard(
             )
             if (onDeleteManual != null) {
                 DropdownMenuItem(
-                    text = { Text("删除该调入学生", color = Color(0xFFEF4444)) },
-                    leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFEF4444)) },
+                    text = { Text("删除该调入学生", color = Danger) },
+                    leadingIcon = {
+                        Icon(Icons.Default.Delete, contentDescription = null, tint = Danger)
+                    },
                     onClick = {
                         showMenu = false
                         onDeleteManual()
@@ -291,4 +297,44 @@ fun StudentCard(
             }
         }
     }
+}
+
+/**
+ * 状态菜单项：语义色只出现在 8dp 圆点上，文字始终是墨色。
+ */
+@Composable
+private fun StatusMenuItem(
+    label: String,
+    accent: androidx.compose.ui.graphics.Color,
+    checked: Boolean = false,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    onClick: () -> Unit
+) {
+    DropdownMenuItem(
+        text = { Text(label, color = InkPrimary) },
+        leadingIcon = {
+            Box(modifier = Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+                when {
+                    checked -> Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        tint = accent,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    icon != null -> Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = accent,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    else -> Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .background(accent, CircleShape)
+                    )
+                }
+            }
+        },
+        onClick = onClick
+    )
 }

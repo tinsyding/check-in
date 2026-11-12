@@ -4,8 +4,8 @@ import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
@@ -21,6 +21,9 @@ import java.time.format.DateTimeFormatter
 
 object TableImageGenerator {
 
+    private val regularTypeface: Typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+    private val mediumTypeface: Typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+
     /**
      * 生成签到表 Bitmap
      */
@@ -34,47 +37,56 @@ object TableImageGenerator {
         val width = 1400
         val padding = 48
         val rowHeight = 60
-        val headerRowHeight = 65
-        // 去掉总人数出勤率那一栏后，顶部 banner 高度缩减至 110
-        val bannerHeight = 110
-        val footerHeight = 65
+        val headerRowHeight = 64
+        val bannerHeight = 112
+        val footerHeight = 64
         val tableHeight = headerRowHeight + (totalCount * rowHeight)
         val height = bannerHeight + tableHeight + footerHeight + padding * 2
 
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
 
-        // 背景纯白
-        canvas.drawColor(Color.WHITE)
+        // 暖纸底
+        canvas.drawColor(ExportPalette.Paper)
 
         val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            typeface = Typeface.DEFAULT
+            typeface = regularTypeface
         }
         val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#E5E7EB")
-            strokeWidth = 2f
+            color = ExportPalette.Hairline
+            strokeWidth = 1.2f
             style = Paint.Style.STROKE
         }
         val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.FILL
         }
+        val checkPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = ExportPalette.RedPen
+            style = Paint.Style.STROKE
+            strokeWidth = 5f
+            strokeCap = Paint.Cap.ROUND
+            strokeJoin = Paint.Join.ROUND
+        }
 
         var currentY = padding.toFloat()
 
         // 1. 顶部标题区域
-        textPaint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        textPaint.typeface = mediumTypeface
         textPaint.textSize = 40f
-        textPaint.color = Color.parseColor("#111827")
-        canvas.drawText("$classCode 签到表", padding.toFloat(), currentY + 42f, textPaint)
+        textPaint.color = ExportPalette.InkPrimary
+        canvas.drawText("$classCode 签到表", padding.toFloat(), currentY + 44f, textPaint)
 
-        // 副标题栏：展示上课时间、任课教师姓名、导出时间
-        textPaint.typeface = Typeface.DEFAULT
-        textPaint.textSize = 23f
-        textPaint.color = Color.parseColor("#6B7280")
+        // 副标题：上课时间、任课教师、导出时间
+        textPaint.typeface = regularTypeface
+        textPaint.textSize = 22f
+        textPaint.color = ExportPalette.InkSecondary
         val nowStr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
-        val teacherPart = if (teacherName.isNotBlank()) "   |   任课教师: $teacherName" else ""
-        val subtitleText = "上课时间: $classTime$teacherPart   |   导出时间: $nowStr"
-        canvas.drawText(subtitleText, padding.toFloat(), currentY + 84f, textPaint)
+        val metaParts = buildList {
+            add("上课时间 $classTime")
+            if (teacherName.isNotBlank()) add("任课教师 $teacherName")
+            add("导出 $nowStr")
+        }
+        canvas.drawText(metaParts.joinToString("   ·   "), padding.toFloat(), currentY + 84f, textPaint)
 
         currentY += bannerHeight
 
@@ -91,27 +103,35 @@ object TableImageGenerator {
         val headers = arrayOf("学号", "姓名", "班级名称", "上课时间", "上课形式", "签到", "备注")
         val tableLeft = padding.toFloat()
         val tableRight = (width - padding).toFloat()
+        val tableTop = currentY
 
-        // 表头背景
-        bgPaint.color = Color.parseColor("#F3F4F6")
-        canvas.drawRect(tableLeft, currentY, tableRight, currentY + headerRowHeight, bgPaint)
+        // 表头背景：下沉纸面
+        bgPaint.color = ExportPalette.PaperSunken
+        canvas.drawRect(tableLeft, tableTop, tableRight, tableTop + headerRowHeight, bgPaint)
 
         // 表头文字
-        textPaint.textSize = 24f
-        textPaint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        textPaint.color = Color.parseColor("#374151")
+        textPaint.textSize = 23f
+        textPaint.typeface = mediumTypeface
+        textPaint.color = ExportPalette.InkSecondary
         var colX = tableLeft
         for (i in headers.indices) {
-            val text = headers[i]
-            val textWidth = textPaint.measureText(text)
-            val centerX = colX + (colWidths[i] - textWidth) / 2f
-            canvas.drawText(text, centerX, currentY + 42f, textPaint)
+            drawCenteredText(
+                canvas = canvas,
+                text = headers[i],
+                centerX = colX + colWidths[i] / 2f,
+                baselineY = tableTop + 40f,
+                paint = textPaint
+            )
             colX += colWidths[i]
         }
 
-        // 表头下边线
-        linePaint.color = Color.parseColor("#D1D5DB")
-        canvas.drawLine(tableLeft, currentY + headerRowHeight, tableRight, currentY + headerRowHeight, linePaint)
+        // 表头上下发丝线
+        linePaint.color = ExportPalette.Hairline
+        canvas.drawLine(tableLeft, tableTop, tableRight, tableTop, linePaint)
+        linePaint.color = ExportPalette.InkTertiary
+        linePaint.strokeWidth = 1.6f
+        canvas.drawLine(tableLeft, tableTop + headerRowHeight, tableRight, tableTop + headerRowHeight, linePaint)
+        linePaint.strokeWidth = 1.2f
         currentY += headerRowHeight
 
         // 数据行
@@ -119,14 +139,8 @@ object TableImageGenerator {
             val student = students[rowIndex]
             val rowY = currentY + rowIndex * rowHeight
 
-            // 斑马条纹
-            if (rowIndex % 2 == 1) {
-                bgPaint.color = Color.parseColor("#FBFBFD")
-                canvas.drawRect(tableLeft, rowY, tableRight, rowY + rowHeight, bgPaint)
-            }
-
-            // 行内底线
-            linePaint.color = Color.parseColor("#F3F4F6")
+            // 行底线
+            linePaint.color = ExportPalette.Hairline
             canvas.drawLine(tableLeft, rowY + rowHeight, tableRight, rowY + rowHeight, linePaint)
 
             val isMovedOut = student.originalClassCode.isNotBlank() &&
@@ -142,102 +156,155 @@ object TableImageGenerator {
                 student.classFormat
             )
 
-            textPaint.typeface = Typeface.DEFAULT
-            textPaint.textSize = 23f
-            textPaint.color = Color.parseColor("#1F2937")
-
             for (i in rowValues.indices) {
-                val value = rowValues[i]
-                val textWidth = textPaint.measureText(value)
-                val textX = curX + (colWidths[i] - textWidth) / 2f
-                canvas.drawText(value, textX, rowY + 38f, textPaint)
+                when (i) {
+                    0 -> {
+                        // 学号
+                        textPaint.typeface = regularTypeface
+                        textPaint.textSize = 22f
+                        textPaint.color = ExportPalette.InkTertiary
+                    }
+                    1 -> {
+                        // 姓名：整行视觉锚点
+                        textPaint.typeface = mediumTypeface
+                        textPaint.textSize = 24f
+                        textPaint.color = ExportPalette.InkPrimary
+                    }
+                    else -> {
+                        textPaint.typeface = regularTypeface
+                        textPaint.textSize = 22f
+                        textPaint.color = ExportPalette.InkSecondary
+                    }
+                }
+                drawCenteredText(
+                    canvas = canvas,
+                    text = rowValues[i],
+                    centerX = curX + colWidths[i] / 2f,
+                    baselineY = rowY + 38f,
+                    paint = textPaint
+                )
                 curX += colWidths[i]
             }
 
-            // 最后一列：签到状态
+            // 签到状态列
             val status = student.status
             val statusText: String
             val statusColor: Int
             if (isMovedOut) {
                 statusText = "调出"
-                statusColor = Color.parseColor("#0F766E") // 深青色标识调出
+                statusColor = ExportPalette.InkSecondary
             } else {
                 when (status) {
                     AttendanceStatus.PRESENT -> {
-                        statusText = "√"
-                        statusColor = Color.parseColor("#10B981") // 绿色对号
+                        statusText = ""
+                        statusColor = ExportPalette.RedPen
                     }
                     AttendanceStatus.LATE -> {
                         statusText = "迟到"
-                        statusColor = Color.parseColor("#F59E0B") // 琥珀橙
+                        statusColor = ExportPalette.StatusLate
                     }
                     AttendanceStatus.LEAVE -> {
                         statusText = "请假"
-                        statusColor = Color.parseColor("#3B82F6") // 科技蓝
+                        statusColor = ExportPalette.StatusLeave
                     }
                     AttendanceStatus.LEAVE_REPLAY -> {
                         statusText = "请假·回放"
-                        statusColor = Color.parseColor("#0F766E") // 深青色，区别于不发回放
+                        statusColor = ExportPalette.StatusLeaveReplay
                     }
                     AttendanceStatus.ONLINE -> {
                         statusText = if (StudentCsvParser.isOfflineStudent(student)) "转线上" else "线上"
-                        statusColor = Color.parseColor("#8B5CF6") // 优雅紫
+                        statusColor = ExportPalette.StatusOnline
                     }
                     AttendanceStatus.UNCHECKED -> {
                         statusText = "未到"
-                        statusColor = Color.parseColor("#EF4444") // 浅红
+                        statusColor = ExportPalette.StatusUnchecked
                     }
                 }
             }
 
-            textPaint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            textPaint.textSize = if (!isMovedOut && status == AttendanceStatus.PRESENT) 30f else 23f
-            textPaint.color = statusColor
-            val stWidth = textPaint.measureText(statusText)
-            val stX = curX + (colWidths[5] - stWidth) / 2f
-            canvas.drawText(statusText, stX, rowY + 39f, textPaint)
+            val statusCenterX = curX + colWidths[5] / 2f
+            if (!isMovedOut && status == AttendanceStatus.PRESENT) {
+                // 红笔勾：已到
+                drawPenCheck(canvas, statusCenterX, rowY + rowHeight / 2f, checkPaint)
+            } else {
+                textPaint.typeface = mediumTypeface
+                textPaint.textSize = if (statusText.length >= 5) 21f else 23f
+                textPaint.color = statusColor
+                drawCenteredText(
+                    canvas = canvas,
+                    text = statusText,
+                    centerX = statusCenterX,
+                    baselineY = rowY + 38f,
+                    paint = textPaint
+                )
+            }
             curX += colWidths[5]
 
-            // 备注列（调出去向、调入来源等，过长截断；无备注的临时调入显示原班）
-            textPaint.typeface = Typeface.DEFAULT
+            // 备注列（调出去向、调入来源等，过长截断）
+            textPaint.typeface = regularTypeface
             textPaint.textSize = 20f
+            textPaint.color = ExportPalette.InkTertiary
             var remark = student.remark
             if (isMovedOut) {
-                // 调到其他班的，备注为“转到某某班”
                 val targetCode = student.classCode
                 val targetLabel = if (targetCode.endsWith("班")) "转到$targetCode" else "转到${targetCode}班"
                 remark = if (remark.isNotBlank()) "$targetLabel ($remark)" else targetLabel
-                textPaint.color = Color.parseColor("#0F766E")
             } else {
                 if (remark.isBlank() && student.originalClassCode.isNotBlank() &&
                     student.originalClassCode != student.classCode
                 ) {
                     remark = "原${student.originalClassCode}调入"
                 }
-                textPaint.color = Color.parseColor("#4F46E5")
             }
             if (textPaint.measureText(remark) > colWidths[6] - 16f && remark.length > 14) {
                 remark = remark.take(14) + "…"
             }
-            val remarkWidth = textPaint.measureText(remark)
-            val remarkX = curX + (colWidths[6] - remarkWidth) / 2f
-            canvas.drawText(remark, remarkX, rowY + 38f, textPaint)
+            drawCenteredText(
+                canvas = canvas,
+                text = remark,
+                centerX = curX + colWidths[6] / 2f,
+                baselineY = rowY + 38f,
+                paint = textPaint
+            )
         }
 
-        // 表格最外框
-        linePaint.color = Color.parseColor("#D1D5DB")
-        canvas.drawRect(tableLeft, currentY - headerRowHeight, tableRight, currentY + totalCount * rowHeight, linePaint)
+        // 表格外框
+        val tableBottom = currentY + totalCount * rowHeight
+        linePaint.color = ExportPalette.Hairline
+        canvas.drawRect(tableLeft, tableTop, tableRight, tableBottom, linePaint)
 
         // 3. 页脚
-        val footerY = currentY + totalCount * rowHeight + 36f
-        textPaint.typeface = Typeface.DEFAULT
+        val footerY = tableBottom + 42f
+        textPaint.typeface = regularTypeface
         textPaint.textSize = 20f
-        textPaint.color = Color.parseColor("#9CA3AF")
-        val footerText = "— 本签到记录由「班级点名签到」App 自动生成 —"
+        textPaint.color = ExportPalette.InkTertiary
+        val footerText = "本签到记录由「班级点名签到」生成"
         val fw = textPaint.measureText(footerText)
         canvas.drawText(footerText, (width - fw) / 2f, footerY, textPaint)
 
         return bitmap
+    }
+
+    private fun drawCenteredText(
+        canvas: Canvas,
+        text: String,
+        centerX: Float,
+        baselineY: Float,
+        paint: Paint
+    ) {
+        if (text.isEmpty()) return
+        val textWidth = paint.measureText(text)
+        canvas.drawText(text, centerX - textWidth / 2f, baselineY, paint)
+    }
+
+    /** 一笔红勾，代替旧版绿色对号字符 */
+    private fun drawPenCheck(canvas: Canvas, centerX: Float, centerY: Float, paint: Paint) {
+        val path = Path().apply {
+            moveTo(centerX - 15f, centerY - 1f)
+            lineTo(centerX - 4f, centerY + 10f)
+            lineTo(centerX + 17f, centerY - 14f)
+        }
+        canvas.drawPath(path, paint)
     }
 
     /**

@@ -600,7 +600,7 @@ class RollCallViewModel(
                     }
                 }
                 if (success) {
-                    Toast.makeText(context, "签到长图已成功保存至相册（Pictures/班级签到表）！", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "签到长图已保存至相册（Pictures/班级签到表）", Toast.LENGTH_LONG).show()
                 } else {
                     Toast.makeText(context, "保存到相册失败，请检查存储权限", Toast.LENGTH_SHORT).show()
                 }
@@ -702,7 +702,7 @@ class RollCallViewModel(
                     )
                 }
                 if (success) {
-                    Toast.makeText(context, "席卡 PDF 已下载至“下载 (Download/班级席卡)”目录！", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "席卡 PDF 已下载至“下载 (Download/班级席卡)”目录", Toast.LENGTH_LONG).show()
                 } else {
                     Toast.makeText(context, "保存 PDF 失败，请检查存储权限", Toast.LENGTH_SHORT).show()
                 }

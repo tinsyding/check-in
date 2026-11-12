@@ -10,6 +10,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,9 +25,11 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -38,13 +41,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.jf.checkin.data.parser.StudentCsvParser
 import com.jf.checkin.data.repository.StudentRepository
 import com.jf.checkin.data.repository.UserPrefRepository
+import com.jf.checkin.ui.theme.InkPrimary
+import com.jf.checkin.ui.theme.InkSecondary
+import com.jf.checkin.ui.theme.PaperBackground
+import com.jf.checkin.ui.theme.PaperSurface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -80,28 +85,46 @@ fun JfBrowserScreen(
     }
 
     Scaffold(
+        containerColor = PaperBackground,
         topBar = {
             TopAppBar(
                 title = {
                     Column {
-                        Text("JF 系统管理台", fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                        Text(targetUrl, fontSize = 11.sp, color = androidx.compose.ui.graphics.Color(0xFF64748B))
+                        Text(
+                            "JF 系统管理台",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = InkPrimary
+                        )
+                        Text(
+                            targetUrl,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = InkSecondary
+                        )
                     }
                 },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "返回",
+                            tint = InkPrimary
+                        )
                     }
                 },
                 actions = {
                     IconButton(onClick = { webViewInstance?.reload() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "刷新")
+                        Icon(
+                            Icons.Default.Refresh,
+                            contentDescription = "刷新",
+                            tint = InkPrimary
+                        )
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = PaperSurface)
             )
         }
     ) { paddingValues ->
-        Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+        Box(modifier = Modifier.fillMaxSize().background(PaperBackground).padding(paddingValues)) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
@@ -189,7 +212,7 @@ fun JfBrowserScreen(
                                             val onlineCount = imported.size - offlineCount
                                             Toast.makeText(
                                                 ctx,
-                                                "导入成功！线下需签到 $offlineCount 人，线上免签 $onlineCount 人",
+                                                "导入成功，线下需签到 $offlineCount 人，线上免签 $onlineCount 人",
                                                 Toast.LENGTH_LONG
                                             ).show()
                                             // 导入后自动切回点名主界面

@@ -2,7 +2,6 @@ package com.jf.checkin.logic
 
 import android.content.ContentValues
 import android.content.Context
-import android.graphics.Color
 import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
@@ -18,7 +17,7 @@ import java.io.FileOutputStream
 
 enum class NameplateFontStyle(val label: String) {
     CURSIVE("书法行楷"),
-    BOLD_STANDARD("厚重粗体 (推荐防发虚)")
+    BOLD_STANDARD("厚重粗体（推荐防发虚）")
 }
 
 object NameplatePdfGenerator {
@@ -59,7 +58,7 @@ object NameplatePdfGenerator {
         val namePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply {
             typeface = targetTypeface
             textSize = 110f
-            color = Color.BLACK // 纯黑避免激光打印机半色调网点抖动
+            color = ExportPalette.PrintInk // 纯黑避免激光打印机半色调网点抖动
             style = Paint.Style.FILL_AND_STROKE
             strokeWidth = if (fontStyle == NameplateFontStyle.BOLD_STANDARD) 1.6f else 2.2f // 物理加厚笔锋边缘，即使碳粉不足也浓墨实心
             textAlign = Paint.Align.CENTER
@@ -67,18 +66,25 @@ object NameplatePdfGenerator {
         }
 
         val idPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply {
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             textSize = 25f
-            color = Color.BLACK
+            color = ExportPalette.PrintInk
             style = Paint.Style.FILL_AND_STROKE
-            strokeWidth = 0.8f
+            strokeWidth = 0.5f
             textAlign = Paint.Align.CENTER
-            isFakeBoldText = true
         }
 
         val foldLinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#999999")
+            color = ExportPalette.Hairline
             strokeWidth = 1.0f
+            style = Paint.Style.STROKE
+            pathEffect = DashPathEffect(floatArrayOf(8f, 6f), 0f)
+        }
+
+        // 中心对折线用红笔色标出，打印为灰度时也会比其它折线更深
+        val centerFoldPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = ExportPalette.RedPen
+            strokeWidth = 1.2f
             style = Paint.Style.STROKE
             pathEffect = DashPathEffect(floatArrayOf(8f, 6f), 0f)
         }
@@ -86,7 +92,7 @@ object NameplatePdfGenerator {
         val foldTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             typeface = Typeface.DEFAULT
             textSize = 10f
-            color = Color.parseColor("#888888")
+            color = ExportPalette.InkTertiary
             textAlign = Paint.Align.CENTER
         }
 
@@ -103,8 +109,8 @@ object NameplatePdfGenerator {
             val page = document.startPage(pageInfo)
             val canvas = page.canvas
 
-            // 背景纯白
-            canvas.drawColor(Color.WHITE)
+            // 暖纸底
+            canvas.drawColor(ExportPalette.PaperSurface)
 
             // 1. 顶部底座折线与说明（顶部向内折）
             val pathTop = Path().apply {
@@ -112,16 +118,16 @@ object NameplatePdfGenerator {
                 lineTo(A4_WIDTH - 24f, baseFlapHeight)
             }
             canvas.drawPath(pathTop, foldLinePaint)
-            canvas.drawText("--- 底座折线 (向内弯折) ---", centerX, baseFlapHeight - 8f, foldTextPaint)
-            canvas.drawText("【 底座面 (向内折) 】", centerX, baseFlapHeight / 2f + 4f, foldTextPaint)
+            canvas.drawText("底座折线 · 向内折", centerX, baseFlapHeight - 8f, foldTextPaint)
+            canvas.drawText("底座面 · 向内折", centerX, baseFlapHeight / 2f + 4f, foldTextPaint)
 
             // 2. 中间对折线（台卡顶部山线）
             val pathMid = Path().apply {
                 moveTo(24f, midY)
                 lineTo(A4_WIDTH - 24f, midY)
             }
-            canvas.drawPath(pathMid, foldLinePaint)
-            canvas.drawText("--- 中心对折线 (顶部对折) ---", centerX, midY - 8f, foldTextPaint)
+            canvas.drawPath(pathMid, centerFoldPaint)
+            canvas.drawText("中心对折线 · 顶部对折", centerX, midY - 8f, foldTextPaint)
 
             // 3. 底部底座折线与说明（底部向内折）
             val pathBottom = Path().apply {
@@ -129,8 +135,8 @@ object NameplatePdfGenerator {
                 lineTo(A4_WIDTH - 24f, bottomFoldY)
             }
             canvas.drawPath(pathBottom, foldLinePaint)
-            canvas.drawText("--- 底座折线 (向内弯折) ---", centerX, bottomFoldY - 8f, foldTextPaint)
-            canvas.drawText("【 底座面 (向内折) 】", centerX, bottomFoldY + baseFlapHeight / 2f + 4f, foldTextPaint)
+            canvas.drawText("底座折线 · 向内折", centerX, bottomFoldY - 8f, foldTextPaint)
+            canvas.drawText("底座面 · 向内折", centerX, bottomFoldY + baseFlapHeight / 2f + 4f, foldTextPaint)
 
             // 动态调节草书字号以适应 2 字、3 字或 4 字姓名（大字号更醒目大气）
             namePaint.textSize = when {

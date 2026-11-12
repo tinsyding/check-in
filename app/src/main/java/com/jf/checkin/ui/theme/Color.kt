@@ -2,21 +2,54 @@ package com.jf.checkin.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val PrimaryBlue = Color(0xFF2563EB)
-val PrimaryBlueDark = Color(0xFF1D4ED8)
-val AccentGreen = Color(0xFF10B981)
-val AccentOrange = Color(0xFFF59E0B)
-val AccentBlue = Color(0xFF3B82F6)
-val AccentRed = Color(0xFFEF4444)
-val AccentPurple = Color(0xFF8B5CF6)
+// ─────────────────────────────────────────────────────────────
+// P1 design tokens：暖纸 + 墨 + 红笔勾
+// 页面底色是纸，卡片是更亮的纸面，文字是墨，
+// 红色只用于「已到」和当前班标记，不用于普通按钮。
+// ─────────────────────────────────────────────────────────────
 
-val BackgroundLight = Color(0xFFF8FAFC)
-val SurfaceLight = Color(0xFFFFFFFF)
-val TextPrimary = Color(0xFF0F172A)
-val TextSecondary = Color(0xFF64748B)
-val BorderColor = Color(0xFFE2E8F0)
-val CardBackgroundUnchecked = Color(0xFFF1F5F9)
-val CardBackgroundPresent = Color(0xFFDCFCE7)
-val CardBorderPresent = Color(0xFF86EFAC)
-val CardBackgroundOnline = Color(0xFFF5F3FF)
-val CardBorderOnline = Color(0xFFDDD6FE)
+/** 页面底色（暖纸） */
+val PaperBackground = Color(0xFFF4F0E8)
+
+/** 卡片/顶栏纸面 */
+val PaperSurface = Color(0xFFFFFDF8)
+
+/** 输入框、统计块等下沉纸面 */
+val PaperSunken = Color(0xFFECE6DA)
+
+/** 1dp 发丝线 */
+val Hairline = Color(0xFFE0D7C7)
+
+/** 主文字：墨 */
+val InkPrimary = Color(0xFF1F1B16)
+
+/** 次级文字 */
+val InkSecondary = Color(0xFF5C5346)
+
+/** 辅助文字 / 占位（纸面上约 5.1:1） */
+val InkTertiary = Color(0xFF6E6455)
+
+/** 深色底上的文字 */
+val InkOnDark = Color(0xFFFFFDF8)
+
+/** 红笔：已到 / 当前班 / 主品牌强调 */
+val RedPen = Color(0xFFA63A1E)
+
+/** 红笔淡底 */
+val RedPenSoft = Color(0xFFF7E7E0)
+
+/** 危险操作 */
+val Danger = Color(0xFFB3261E)
+
+/** 危险操作淡底 */
+val DangerSoft = Color(0xFFFBEAE8)
+
+/** 状态徽章/中性 chip 底色 */
+val BadgeBackground = Color(0xFFF2EEE6)
+
+// 语义状态色：只做圆点、3dp 边和文字强调，不铺整面背景
+val StatusLateInk = Color(0xFF9A4708)
+val StatusLeaveInk = Color(0xFF1D4ED8)
+val StatusLeaveReplayInk = Color(0xFF0F766E)
+val StatusOnlineInk = Color(0xFF6D28D9)
+val StatusUncheckedInk = Color(0xFF6F6559)
