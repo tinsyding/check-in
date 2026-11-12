@@ -104,6 +104,7 @@ fun ZipScreen(
     onGenerate: () -> Unit,
     onBack: () -> Unit,
     onMessageShown: () -> Unit,
+    onAutoShareConsumed: () -> Unit,
 ) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -125,6 +126,29 @@ fun ZipScreen(
         if (message != null) {
             snackbarHostState.showSnackbar(message)
             onMessageShown()
+        }
+    }
+
+    // 从相册等应用分享进来：自动按日期 + 姓名生成，并直接拉起系统分享
+    LaunchedEffect(state.autoSharePending, state.build::class, state.uris.size) {
+        if (!state.autoSharePending) return@LaunchedEffect
+        when (val build = state.build) {
+            is BuildState.Idle -> {
+                if (state.uris.isNotEmpty()) onGenerate()
+            }
+
+            is BuildState.Ready -> {
+                val shared = runCatching {
+                    ShareUtil.shareZip(context, build.archive.file)
+                }.onFailure {
+                    Toast.makeText(context, "分享失败", Toast.LENGTH_SHORT).show()
+                }.isSuccess
+
+                onAutoShareConsumed()
+                if (shared) onBack()
+            }
+
+            is BuildState.Building -> Unit
         }
     }
 

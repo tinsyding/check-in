@@ -47,6 +47,7 @@ data class ZipUiState(
     val prefix: String = datePrefix(),
     val customNameEnabled: Boolean = false,
     val customName: String = "",
+    val autoSharePending: Boolean = false,
     val build: BuildState = BuildState.Idle,
     val message: String? = null,
 )
@@ -88,6 +89,7 @@ class ZipViewModel(application: Application) : AndroidViewModel(application) {
                 nameEdited = false,
                 customNameEnabled = false,
                 customName = "",
+                autoSharePending = true,
                 build = BuildState.Idle,
                 message = if (incoming.size > MAX_ZIP_IMAGES) {
                     "最多打包 $MAX_ZIP_IMAGES 张图片，已保留前 $MAX_ZIP_IMAGES 张"
@@ -196,6 +198,11 @@ class ZipViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(message = null) }
     }
 
+    /** 分享目标进入时自动生成并分享，分享发出或失败后清掉一次性标记。 */
+    fun onAutoShareConsumed() {
+        _state.update { it.copy(autoSharePending = false) }
+    }
+
     fun generate() {
         val snapshot = _state.value
         if (snapshot.uris.isEmpty() || snapshot.build is BuildState.Building) return
@@ -261,7 +268,11 @@ class ZipViewModel(application: Application) : AndroidViewModel(application) {
             } catch (error: Throwable) {
                 output.delete()
                 _state.update {
-                    it.copy(build = BuildState.Idle, message = "生成失败，请重试")
+                    it.copy(
+                        build = BuildState.Idle,
+                        autoSharePending = false,
+                        message = "生成失败，请重试",
+                    )
                 }
             }
         }

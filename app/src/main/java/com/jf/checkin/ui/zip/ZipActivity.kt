@@ -42,6 +42,7 @@ class ZipActivity : ComponentActivity() {
                     onGenerate = viewModel::generate,
                     onBack = { finish() },
                     onMessageShown = viewModel::dismissMessage,
+                    onAutoShareConsumed = viewModel::onAutoShareConsumed,
                 )
             }
         }
