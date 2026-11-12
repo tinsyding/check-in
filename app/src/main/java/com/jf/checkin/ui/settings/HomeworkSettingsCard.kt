@@ -43,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -78,22 +79,23 @@ internal fun HomeworkSettingsCard(prefRepository: UserPrefRepository) {
     var splitMode by remember { mutableStateOf(prefRepository.homeworkSplitMode) }
     var testInput by remember { mutableStateOf("135qqq") }
 
-    // 从系统设置返回时刷新服务状态
-    val lifecycleOwner = context as? LifecycleOwner
-    LaunchedEffect(Unit) {
+    // 从系统设置返回或生命周期变更时刷新服务状态
+    val lifecycleOwner = LocalLifecycleOwner.current
+    fun refreshServiceStatus() {
         serviceEnabled = AccessibilityUtil.isServiceEnabled(context, TextExpanderService::class.java)
+    }
+
+    LaunchedEffect(Unit) {
+        refreshServiceStatus()
     }
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                serviceEnabled = AccessibilityUtil.isServiceEnabled(
-                    context,
-                    TextExpanderService::class.java,
-                )
+                refreshServiceStatus()
             }
         }
-        lifecycleOwner?.lifecycle?.addObserver(observer)
-        onDispose { lifecycleOwner?.lifecycle?.removeObserver(observer) }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     val preview = remember(testInput, triggerWord, template, separator, splitMode) {
@@ -143,7 +145,13 @@ internal fun HomeworkSettingsCard(prefRepository: UserPrefRepository) {
         Surface(
             shape = RoundedCornerShape(Radii.Control),
             color = PaperSunken,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable {
+                    refreshServiceStatus()
+                    val msg = if (serviceEnabled) "无障碍服务已开启并正在运行" else "无障碍服务未开启，请在系统设置中启用"
+                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                },
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = Spacing.Md, vertical = Spacing.Sm),
@@ -168,7 +176,7 @@ internal fun HomeworkSettingsCard(prefRepository: UserPrefRepository) {
                         text = if (serviceEnabled) {
                             "在任意输入框输入 135qqq 即可自动展开。"
                         } else {
-                            "需要到系统设置中手动开启，应用无法代开。"
+                            "需要到系统设置中手动开启，点击本卡片可随时刷新检测。"
                         },
                         style = MaterialTheme.typography.labelSmall,
                         color = InkTertiary,
@@ -176,13 +184,18 @@ internal fun HomeworkSettingsCard(prefRepository: UserPrefRepository) {
                 }
                 OutlinedButton(
                     onClick = {
-                        if (!AccessibilityUtil.openAccessibilitySettings(context)) {
-                            Toast.makeText(context, "无法打开系统设置", Toast.LENGTH_SHORT).show()
+                        refreshServiceStatus()
+                        if (serviceEnabled) {
+                            Toast.makeText(context, "无障碍服务正在正常运行", Toast.LENGTH_SHORT).show()
+                        } else {
+                            if (!AccessibilityUtil.openAccessibilitySettings(context)) {
+                                Toast.makeText(context, "无法打开系统设置", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     },
                     contentPadding = PaddingValues(horizontal = Spacing.Md, vertical = Spacing.Xs),
                 ) {
-                    Text(if (serviceEnabled) "去查看" else "去开启")
+                    Text(if (serviceEnabled) "已开启" else "去开启")
                 }
             }
         }
