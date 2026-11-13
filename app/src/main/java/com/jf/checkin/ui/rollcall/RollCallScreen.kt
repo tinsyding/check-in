@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,7 +32,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -81,6 +82,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -96,7 +98,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.jf.checkin.data.model.AttendanceStatus
+import com.jf.checkin.data.model.Student
 import com.jf.checkin.data.remote.TmsCoursePlan
 import com.jf.checkin.data.remote.TmsCourseResult
 import com.jf.checkin.data.remote.TmsMissingCourse
@@ -169,6 +175,19 @@ fun RollCallScreen(
 
     LaunchedEffect(selectedClassCode) {
         viewModel.refreshScheduledSync()
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshScheduledSync()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
 
     // Android 8/9 保存相册/下载目录仍需 WRITE_EXTERNAL_STORAGE，按需申请后继续原操作
@@ -248,7 +267,12 @@ fun RollCallScreen(
     val onlineCount = currentStudents.count { it.status == AttendanceStatus.ONLINE }
     val totalCount = currentStudents.size
 
-    Column(modifier = Modifier.fillMaxSize().background(PaperBackground)) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(PaperBackground)
+            .navigationBarsPadding()
+    ) {
         // 顶部全局导航栏：全部展开为顶栏功能按钮，无需折叠菜单
         TopAppBar(
             title = {},
@@ -484,7 +508,7 @@ fun RollCallScreen(
     if (showResetAllDialog) {
         AlertDialog(
             onDismissRequest = { showResetAllDialog = false },
-            title = { Text("全部清空", fontWeight = FontWeight.SemiBold) },
+            title = { Text("全部清空") },
             text = { Text("将所有班级的签到状态全部清除（回到未到）？该操作不可撤销。") },
             confirmButton = {
                 Button(onClick = {
@@ -542,15 +566,7 @@ fun RollCallScreen(
         val currentScheduled = scheduledSync
         AlertDialog(
             onDismissRequest = { showScheduledDetailDialog = false },
-            icon = {
-                Icon(
-                    imageVector = Icons.Default.Schedule,
-                    contentDescription = null,
-                    tint = InkPrimary,
-                    modifier = Modifier.size(28.dp)
-                )
-            },
-            title = { Text("考勤已预约", fontWeight = FontWeight.SemiBold) },
+            title = { Text("考勤已预约") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
@@ -594,18 +610,9 @@ fun RollCallScreen(
         val hasTmsCredentials = viewModel.hasTmsCredentials()
         AlertDialog(
             onDismissRequest = { showTmsAfterShareDialog = false },
-            icon = {
-                Icon(
-                    Icons.Default.CloudUpload,
-                    contentDescription = null,
-                    tint = InkPrimary,
-                    modifier = Modifier.size(28.dp)
-                )
-            },
             title = {
                 Text(
                     text = if (hasTmsCredentials) "同步校管家考勤？" else "尚未配置校管家账号",
-                    fontWeight = FontWeight.SemiBold
                 )
             },
             text = {
@@ -662,21 +669,16 @@ fun RollCallScreen(
 
         AlertDialog(
             onDismissRequest = { showNameplateDialog = false },
-            icon = {
-                Icon(
-                    imageVector = Icons.Default.Print,
-                    contentDescription = null,
-                    tint = InkPrimary,
-                    modifier = Modifier.size(28.dp)
-                )
-            },
             title = {
-                Text("班级席卡", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleLarge)
+                Text("班级席卡", style = MaterialTheme.typography.titleLarge)
             },
             text = {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(Spacing.Md),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 460.dp)
+                        .verticalScroll(rememberScrollState())
                 ) {
                     // 班级与学生人数
                     Row(
@@ -686,20 +688,20 @@ fun RollCallScreen(
                     ) {
                         Text(
                             text = "班级: $currentCode",
-                            fontWeight = FontWeight.SemiBold,
+                            fontWeight = FontWeight.Medium,
                             style = MaterialTheme.typography.bodyMedium,
                             color = InkPrimary
                         )
                         Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = InkPrimary.copy(alpha = 0.1f)
+                            shape = RoundedCornerShape(Radii.Chip),
+                            color = PaperSunken
                         ) {
                             Text(
                                 text = "共 ${currentStudents.size} 人",
                                 color = InkPrimary,
-                                fontWeight = FontWeight.SemiBold,
-                                style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                fontWeight = FontWeight.Medium,
+                                style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
+                                modifier = Modifier.padding(horizontal = Spacing.Sm, vertical = Spacing.Xs)
                             )
                         }
                     }
@@ -746,7 +748,7 @@ fun RollCallScreen(
                                             else -> {}
                                         }
                                     },
-                                    shape = RoundedCornerShape(8.dp),
+                                    shape = RoundedCornerShape(Radii.Control),
                                     color = if (isSelected) InkPrimary else PaperSunken,
                                     contentColor = if (isSelected) InkOnDark else InkSecondary,
                                     border = if (isSelected) null else androidx.compose.foundation.BorderStroke(1.dp, Hairline),
@@ -756,7 +758,7 @@ fun RollCallScreen(
                                         Text(
                                             text = ch.label,
                                             style = MaterialTheme.typography.bodySmall,
-                                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                            fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
                                             maxLines = 1
                                         )
                                     }
@@ -780,7 +782,7 @@ fun RollCallScreen(
                                             else -> {}
                                         }
                                     },
-                                    shape = RoundedCornerShape(8.dp),
+                                    shape = RoundedCornerShape(Radii.Control),
                                     color = if (isSelected) InkPrimary else PaperSunken,
                                     contentColor = if (isSelected) InkOnDark else InkSecondary,
                                     border = if (isSelected) null else androidx.compose.foundation.BorderStroke(1.dp, Hairline),
@@ -790,7 +792,7 @@ fun RollCallScreen(
                                         Text(
                                             text = ch.label,
                                             style = MaterialTheme.typography.bodySmall,
-                                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                            fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
                                             maxLines = 1
                                         )
                                     }
@@ -856,6 +858,7 @@ fun RollCallScreen(
                             }
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 FilledTonalButton(
+                                    enabled = !isExporting,
                                     onClick = {
                                         showNameplateDialog = false
                                         viewModel.directPrintNameplatePdf(
@@ -864,9 +867,10 @@ fun RollCallScreen(
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("测试打印 (1张)", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                                    Text("测试打印 (1张)", style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"))
                                 }
                                 Button(
+                                    enabled = !isExporting,
                                     onClick = {
                                         showNameplateDialog = false
                                         viewModel.directPrintNameplatePdf(
@@ -876,7 +880,7 @@ fun RollCallScreen(
                                     colors = ButtonDefaults.buttonColors(containerColor = InkPrimary),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("打印全班 (${currentStudents.size}张)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                    Text("打印全班 (${currentStudents.size}张)", style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"))
                                 }
                             }
                         }
@@ -918,6 +922,7 @@ fun RollCallScreen(
                             }
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 FilledTonalButton(
+                                    enabled = !isExporting,
                                     onClick = {
                                         showNameplateDialog = false
                                         viewModel.printViaLpr(
@@ -926,9 +931,10 @@ fun RollCallScreen(
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("LPR测试打印 (1张)", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                                    Text("LPR测试打印 (1张)", style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"))
                                 }
                                 Button(
+                                    enabled = !isExporting,
                                     onClick = {
                                         showNameplateDialog = false
                                         viewModel.printViaLpr(
@@ -938,7 +944,7 @@ fun RollCallScreen(
                                     colors = ButtonDefaults.buttonColors(containerColor = InkPrimary),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("LPR打印全班 (${currentStudents.size}张)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                    Text("LPR打印全班 (${currentStudents.size}张)", style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"))
                                 }
                             }
                         }
@@ -973,15 +979,17 @@ fun RollCallScreen(
                             }
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 FilledTonalButton(
+                                    enabled = !isExporting,
                                     onClick = {
                                         showNameplateDialog = false
                                         viewModel.printViaFtp(context, editIp.trim(), editPort.trim(), isTestOneSheet = true)
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("FTP测试投递 (1张)", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                                    Text("FTP测试投递 (1张)", style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"))
                                 }
                                 Button(
+                                    enabled = !isExporting,
                                     onClick = {
                                         showNameplateDialog = false
                                         viewModel.printViaFtp(context, editIp.trim(), editPort.trim(), isTestOneSheet = false)
@@ -989,22 +997,24 @@ fun RollCallScreen(
                                     colors = ButtonDefaults.buttonColors(containerColor = InkPrimary),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("FTP投递全班 (${currentStudents.size}张)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                    Text("FTP投递全班 (${currentStudents.size}张)", style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"))
                                 }
                             }
                         }
                         PrintChannel.SYSTEM -> {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 FilledTonalButton(
+                                    enabled = !isExporting,
                                     onClick = {
                                         showNameplateDialog = false
                                         viewModel.printViaSystem(context, isTestOneSheet = true)
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("系统测试打印 (1张)", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                                    Text("系统测试打印 (1张)", style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"))
                                 }
                                 Button(
+                                    enabled = !isExporting,
                                     onClick = {
                                         showNameplateDialog = false
                                         viewModel.printViaSystem(context, isTestOneSheet = false)
@@ -1012,7 +1022,7 @@ fun RollCallScreen(
                                     colors = ButtonDefaults.buttonColors(containerColor = InkPrimary),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("系统打印全班 (${currentStudents.size}张)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                    Text("系统打印全班 (${currentStudents.size}张)", style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"))
                                 }
                             }
                         }
@@ -1041,21 +1051,23 @@ fun RollCallScreen(
                                     colors = ButtonDefaults.buttonColors(containerColor = InkPrimary),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("打开复合机网页", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                    Text("打开复合机网页", style = MaterialTheme.typography.labelLarge)
                                 }
                                 FilledTonalButton(
+                                    enabled = !isExporting,
                                     onClick = {
                                         runWithStoragePermission { viewModel.downloadNameplatePdf(context) }
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("下载PDF (用于网页上传)", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                                    Text("下载PDF (用于网页上传)", style = MaterialTheme.typography.bodySmall)
                                 }
                             }
                         }
                         PrintChannel.OFFICIAL -> {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Button(
+                                    enabled = !isExporting,
                                     onClick = {
                                         showNameplateDialog = false
                                         viewModel.exportAndShareNameplatePdf(context)
@@ -1063,15 +1075,16 @@ fun RollCallScreen(
                                     colors = ButtonDefaults.buttonColors(containerColor = InkPrimary),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("调用官方App / 分享", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                    Text("调用官方App / 分享", style = MaterialTheme.typography.labelLarge)
                                 }
                                 FilledTonalButton(
+                                    enabled = !isExporting,
                                     onClick = {
                                         runWithStoragePermission { viewModel.downloadNameplatePdf(context) }
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("下载PDF", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                                    Text("下载PDF", style = MaterialTheme.typography.bodySmall)
                                 }
                             }
                         }
@@ -1085,6 +1098,7 @@ fun RollCallScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedButton(
+                        enabled = !isExporting,
                         onClick = {
                             runWithStoragePermission { viewModel.downloadNameplatePdf(context) }
                         },
@@ -1093,6 +1107,7 @@ fun RollCallScreen(
                         Text("下载PDF")
                     }
                     Button(
+                        enabled = !isExporting,
                         onClick = {
                             showNameplateDialog = false
                             viewModel.exportAndShareNameplatePdf(context)
@@ -1121,7 +1136,7 @@ fun RollCallScreen(
                 pendingExportAction = null
             },
             title = {
-                Text("设置任课教师姓名", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
+                Text("设置任课教师姓名", style = MaterialTheme.typography.titleMedium)
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1175,7 +1190,7 @@ fun RollCallScreen(
         var inputRemark by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showAddStudentDialog = false },
-            title = { Text("调入学生到 $selectedClassCode", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium) },
+            title = { Text("调入学生到 $selectedClassCode", style = MaterialTheme.typography.titleMedium) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
@@ -1235,7 +1250,7 @@ fun RollCallScreen(
     remarkEditingStudent?.let { target ->
         AlertDialog(
             onDismissRequest = { remarkEditingStudent = null },
-            title = { Text("备注 · ${target.name}(${target.studentId})", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium) },
+            title = { Text("备注 · ${target.name}(${target.studentId})", style = MaterialTheme.typography.titleMedium) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
@@ -1271,7 +1286,7 @@ fun RollCallScreen(
     deleteConfirmStudent?.let { target ->
         AlertDialog(
             onDismissRequest = { deleteConfirmStudent = null },
-            title = { Text("删除调入学生？", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium) },
+            title = { Text("删除调入学生？", style = MaterialTheme.typography.titleMedium) },
             text = { Text("将 ${target.name}(${target.studentId}) 移出 $selectedClassCode，该操作仅影响手动调入名单。") },
             confirmButton = {
                 Button(
@@ -1305,7 +1320,7 @@ fun RollCallScreen(
         }
         AlertDialog(
             onDismissRequest = { moveStudent = null },
-            title = { Text("调班 · ${target.name}(${target.studentId})", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium) },
+            title = { Text("调班 · ${target.name}(${target.studentId})", style = MaterialTheme.typography.titleMedium) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
@@ -1314,14 +1329,14 @@ fun RollCallScreen(
                             if (target.originalClassCode.isNotBlank() && target.originalClassCode != target.classCode) {
                                 append("（原 ${target.originalClassCode} 班）")
                             }
-                            append("，请选择目标班级。调动后自动继承目标班上课时间，重导名单不丢失。")
+                            append("，请选择目标班级。调动后自动继承目标班上课时间，重导名单不丢失")
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = InkSecondary
                     )
                     if (candidates.isEmpty()) {
                         Text(
-                            text = "暂无其他班级可选。",
+                            text = "暂无其他班级可选",
                             style = MaterialTheme.typography.bodySmall,
                             color = Danger
                         )
@@ -1330,7 +1345,7 @@ fun RollCallScreen(
                             candidates.forEach { info ->
                                 val isSelected = (info.classCode == moveTargetCode)
                                 Surface(
-                                    shape = RoundedCornerShape(8.dp),
+                                    shape = RoundedCornerShape(Radii.Control),
                                     color = if (isSelected) InkPrimary.copy(alpha = 0.1f) else PaperBackground,
                                     border = androidx.compose.foundation.BorderStroke(
                                         1.dp,
@@ -1343,16 +1358,16 @@ fun RollCallScreen(
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                                            .padding(horizontal = Spacing.Md, vertical = Spacing.Sm),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Column {
                                             Text(
                                                 text = info.classCode,
-                                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                                fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
                                                 style = MaterialTheme.typography.bodyMedium,
-                                                color = if (isSelected) InkPrimary else InkPrimary
+                                                color = InkPrimary
                                             )
                                             if (info.classTime.isNotBlank()) {
                                                 Text(
@@ -1452,16 +1467,8 @@ private fun TmsScheduledDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = {
-            Icon(
-                imageVector = Icons.Default.Schedule,
-                contentDescription = null,
-                tint = InkPrimary,
-                modifier = Modifier.size(28.dp)
-            )
-        },
         title = {
-            Text("考勤已预约", fontWeight = FontWeight.SemiBold)
+            Text("考勤已预约")
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.Md)) {
@@ -1471,18 +1478,18 @@ private fun TmsScheduledDialog(
                     color = InkPrimary
                 )
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RoundedCornerShape(Radii.Control),
                     color = PaperBackground,
                     border = androidx.compose.foundation.BorderStroke(1.dp, Hairline),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
                         modifier = Modifier.padding(Spacing.Md),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                        verticalArrangement = Arrangement.spacedBy(Spacing.Xs)
                     ) {
-                        Text("• 您可以退出应用，到达上课时间后台将自动执行提交。", style = MaterialTheme.typography.bodySmall, color = InkTertiary)
-                        Text("• 考勤完成后将通过系统通知栏提醒结果。", style = MaterialTheme.typography.bodySmall, color = InkTertiary)
-                        Text("• 等待期间若有点名变动，后台将以最新点名数据为准。", style = MaterialTheme.typography.bodySmall, color = InkTertiary)
+                        Text("• 您可以退出应用，到达上课时间后台将自动执行提交", style = MaterialTheme.typography.bodySmall, color = InkTertiary)
+                        Text("• 考勤完成后将通过系统通知栏提醒结果", style = MaterialTheme.typography.bodySmall, color = InkTertiary)
+                        Text("• 等待期间若有点名变动，后台将以最新点名数据为准", style = MaterialTheme.typography.bodySmall, color = InkTertiary)
                     }
                 }
             }
@@ -1512,12 +1519,12 @@ private fun TmsScheduledDialog(
 private fun TmsBusyDialog(title: String, message: String) {
     AlertDialog(
         onDismissRequest = {},
-        title = { Text(title, fontWeight = FontWeight.SemiBold) },
+        title = { Text(title) },
         text = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(
-                    modifier = Modifier.size(24.dp),
-                    strokeWidth = 3.dp
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(message, style = MaterialTheme.typography.bodyMedium)
@@ -1556,7 +1563,7 @@ private fun TmsPreviewDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("校管家考勤同步预览", fontWeight = FontWeight.SemiBold) },
+        title = { Text("校管家考勤同步预览") },
         text = {
             Column(
                 modifier = Modifier
@@ -1652,7 +1659,7 @@ private fun TmsPreviewDialog(
                         Column(modifier = Modifier.padding(Spacing.Md)) {
                             Text(
                                 text = "需要注意",
-                                fontWeight = FontWeight.SemiBold,
+                                fontWeight = FontWeight.Medium,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = StatusLateInk
                             )
@@ -1708,13 +1715,15 @@ private fun TmsPreviewDialog(
                                 } else {
                                     "确认同步 (${preview.submittableCount})"
                                 }
-                                Text(label, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    label,
+                                    style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum")
+                                )
                             }
                         }
                         if (preview.canForceSubmit) {
-                            Button(
-                                onClick = { showForceConfirm = true },
-                                colors = ButtonDefaults.buttonColors(containerColor = StatusLateInk)
+                            OutlinedButton(
+                                onClick = { showForceConfirm = true }
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Check,
@@ -1724,7 +1733,8 @@ private fun TmsPreviewDialog(
                                 Spacer(modifier = Modifier.width(Spacing.Sm))
                                 Text(
                                     if (preview.canSubmit) "名单对不上？强行考勤" else "强行考勤 (${preview.forceSubmittableCount})",
-                                    fontWeight = FontWeight.SemiBold
+                                    style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),
+                                    color = InkPrimary
                                 )
                             }
                         }
@@ -1754,22 +1764,14 @@ private fun TmsPreviewDialog(
         val skippedStudents = preview.forceSkippedStudents
         AlertDialog(
             onDismissRequest = { showForceConfirm = false },
-            icon = {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.FactCheck,
-                    contentDescription = null,
-                    tint = StatusLateInk,
-                    modifier = Modifier.size(28.dp)
-                )
-            },
-            title = { Text("确认强行考勤？", fontWeight = FontWeight.SemiBold) },
+            title = { Text("确认强行考勤？") },
             text = {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = 380.dp)
                         .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(Spacing.Sm)
                 ) {
                     Text(
                         text = "本地名单与校管家不一致，强行考勤只会提交已匹配的学员，未匹配的本地学员不会写入校管家。",
@@ -1778,15 +1780,15 @@ private fun TmsPreviewDialog(
                     )
                     forcePlans.forEach { plan ->
                         Surface(
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(Radii.Control),
                             color = PaperSunken,
                             border = androidx.compose.foundation.BorderStroke(1.dp, Hairline),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Column(modifier = Modifier.padding(8.dp)) {
+                            Column(modifier = Modifier.padding(Spacing.Sm)) {
                                 Text(
                                     text = plan.className,
-                                    fontWeight = FontWeight.SemiBold,
+                                    fontWeight = FontWeight.Medium,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = StatusLateInk
                                 )
@@ -1829,9 +1831,9 @@ private fun TmsPreviewDialog(
                         showForceConfirm = false
                         onForceConfirm()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = StatusLateInk)
+                    colors = ButtonDefaults.buttonColors(containerColor = InkPrimary)
                 ) {
-                    Text("确认强行考勤", fontWeight = FontWeight.SemiBold)
+                    Text("确认强行考勤")
                 }
             },
             dismissButton = {
@@ -1889,15 +1891,7 @@ private fun TmsMissingReportDialog(
     var showConfirm by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.FactCheck,
-                contentDescription = null,
-                tint = if (report.canSubmit) StatusLateInk else StatusLeaveReplayInk,
-                modifier = Modifier.size(28.dp)
-            )
-        },
-        title = { Text("校管家考勤检查", fontWeight = FontWeight.SemiBold) },
+        title = { Text("校管家考勤检查") },
         text = {
             Column(
                 modifier = Modifier
@@ -1919,8 +1913,8 @@ private fun TmsMissingReportDialog(
                     )
                 }
                 Text(
-                    text = "检查范围：${report.startDate} ~ ${report.endDate}，共检查 ${report.checkedCourseCount} 节课。",
-                    style = MaterialTheme.typography.bodySmall,
+                    text = "检查范围：${report.startDate} ~ ${report.endDate}，共检查 ${report.checkedCourseCount} 节课",
+                    style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
                     color = InkTertiary
                 )
 
@@ -1939,11 +1933,11 @@ private fun TmsMissingReportDialog(
                                 Icons.Default.Check,
                                 contentDescription = null,
                                 tint = StatusLeaveReplayInk,
-                                modifier = Modifier.size(24.dp)
+                                modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "没有发现未考勤的班级，考勤已全部完成。",
+                                text = "没有发现未考勤的班级，考勤已全部完成",
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Medium,
                                 color = StatusLeaveReplayInk
@@ -1960,13 +1954,13 @@ private fun TmsMissingReportDialog(
                         Column(modifier = Modifier.padding(Spacing.Md)) {
                             Text(
                                 text = "发现 ${report.courses.size} 节未考勤课程",
-                                fontWeight = FontWeight.SemiBold,
-                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
                                 color = StatusLateInk
                             )
                             Text(
-                                text = "可一键考勤 ${report.submittableCount} 节，共 ${report.totalStudentCount} 人次。",
-                                style = MaterialTheme.typography.bodySmall,
+                                text = "可一键考勤 ${report.submittableCount} 节，共 ${report.totalStudentCount} 人次",
+                                style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
                                 color = StatusLateInk
                             )
                         }
@@ -1989,7 +1983,7 @@ private fun TmsMissingReportDialog(
                         ) {
                             Text(
                                 text = "需要注意",
-                                fontWeight = FontWeight.SemiBold,
+                                fontWeight = FontWeight.Medium,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = InkSecondary
                             )
@@ -2015,11 +2009,14 @@ private fun TmsMissingReportDialog(
             if (report.canSubmit) {
                 Button(
                     onClick = { showConfirm = true },
-                    colors = ButtonDefaults.buttonColors(containerColor = StatusLateInk)
+                    colors = ButtonDefaults.buttonColors(containerColor = InkPrimary)
                 ) {
                     Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(Spacing.Sm))
-                    Text("一键考勤 (${report.submittableCount})", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "一键考勤 (${report.submittableCount})",
+                        style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum")
+                    )
                 }
             } else {
                 Button(onClick = onDismiss) {
@@ -2037,32 +2034,24 @@ private fun TmsMissingReportDialog(
     if (showConfirm) {
         AlertDialog(
             onDismissRequest = { showConfirm = false },
-            icon = {
-                Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = null,
-                    tint = StatusLateInk,
-                    modifier = Modifier.size(28.dp)
-                )
-            },
-            title = { Text("确认一键考勤？", fontWeight = FontWeight.SemiBold) },
+            title = { Text("确认一键考勤？") },
             text = {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = 360.dp)
                         .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(Spacing.Sm)
                 ) {
                     Text(
                         text = "将把以下 ${report.submittableCount} 节课的校管家学员全部标记为已出勤并计费，共 ${report.totalStudentCount} 人次。",
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
                         color = InkSecondary
                     )
                     report.submittableCourses.forEach { course ->
                         Text(
                             text = "• ${course.date} ${course.className} ${course.displayTime}（${course.studentCount} 人）",
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
                             color = InkSecondary
                         )
                     }
@@ -2080,9 +2069,9 @@ private fun TmsMissingReportDialog(
                         showConfirm = false
                         onSubmit()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = StatusLateInk)
+                    colors = ButtonDefaults.buttonColors(containerColor = InkPrimary)
                 ) {
-                    Text("确认考勤", fontWeight = FontWeight.SemiBold)
+                    Text("确认考勤")
                 }
             },
             dismissButton = {
@@ -2110,7 +2099,7 @@ private fun TmsMissingCourseCard(course: TmsMissingCourse) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = course.className,
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Medium,
                     style = MaterialTheme.typography.bodyMedium,
                     color = InkPrimary,
                     modifier = Modifier.weight(1f)
@@ -2164,7 +2153,7 @@ private fun TmsPlanCard(plan: TmsCoursePlan) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = plan.className,
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Medium,
                     style = MaterialTheme.typography.bodyMedium,
                     color = InkPrimary,
                     modifier = Modifier.weight(1f)
@@ -2261,8 +2250,7 @@ private fun TmsSuccessDialog(
                     results.isNotEmpty() && successCount == results.size -> "校管家考勤已同步"
                     successCount > 0 -> "部分课程同步成功"
                     else -> "同步未完成"
-                },
-                fontWeight = FontWeight.SemiBold
+                }
             )
         },
         text = {
@@ -2273,12 +2261,12 @@ private fun TmsSuccessDialog(
                     .verticalScroll(rememberScrollState())
             ) {
                 if (results.isEmpty()) {
-                    Text("没有可提交的课程。", style = MaterialTheme.typography.bodySmall)
+                    Text("没有可提交的课程", style = MaterialTheme.typography.bodySmall)
                 }
                 results.forEach { result ->
                     Text(
                         text = "${if (result.success) "成功" else "失败"}：${result.className}",
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Medium,
                         style = MaterialTheme.typography.bodySmall,
                         color = if (result.success) StatusLeaveReplayInk else Danger
                     )
@@ -2314,7 +2302,7 @@ private fun TmsErrorDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("无法同步校管家", fontWeight = FontWeight.SemiBold) },
+        title = { Text("无法同步校管家") },
         text = {
             Text(
                 text = state.message,
@@ -2610,6 +2598,7 @@ private fun TabletLandscapeLayout(
             val sortedStudents = remember(currentStudents) {
                 currentStudents.sortedWith(compareBy { it.status == AttendanceStatus.ONLINE })
             }
+            val studentKeys = remember(sortedStudents) { buildUniqueStudentKeys(sortedStudents) }
 
             // 学生大字点名网格 (横屏自适应 4~5 列)
             LazyVerticalGrid(
@@ -2619,7 +2608,7 @@ private fun TabletLandscapeLayout(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                items(sortedStudents, key = { it.studentId }) { student ->
+                itemsIndexed(sortedStudents, key = { index, _ -> studentKeys[index] }) { _, student ->
                     StudentCard(
                         student = student,
                         onToggleCheckIn = { onToggleCheckIn(student.studentId) },
@@ -2862,6 +2851,7 @@ private fun PhonePortraitLayout(
         val sortedStudents = remember(currentStudents) {
             currentStudents.sortedWith(compareBy { it.status == AttendanceStatus.ONLINE })
         }
+        val studentKeys = remember(sortedStudents) { buildUniqueStudentKeys(sortedStudents) }
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
             contentPadding = PaddingValues(Spacing.Md),
@@ -2869,7 +2859,7 @@ private fun PhonePortraitLayout(
             verticalArrangement = Arrangement.spacedBy(Spacing.Md),
             modifier = Modifier.weight(1f)
         ) {
-            items(sortedStudents, key = { it.studentId }) { student ->
+            itemsIndexed(sortedStudents, key = { index, _ -> studentKeys[index] }) { _, student ->
                 StudentCard(
                     student = student,
                     onToggleCheckIn = { onToggleCheckIn(student.studentId) },
@@ -3040,5 +3030,14 @@ private fun EmptyDataView(
                 }
             }
         }
+    }
+}
+
+private fun buildUniqueStudentKeys(students: List<Student>): List<String> {
+    val seen = HashMap<String, Int>(students.size)
+    return students.map { student ->
+        val count = (seen[student.studentId] ?: 0) + 1
+        seen[student.studentId] = count
+        if (count == 1) student.studentId else "${student.studentId}#$count"
     }
 }

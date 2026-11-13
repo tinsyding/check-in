@@ -148,11 +148,18 @@ class RollCallViewModel(
         _printerProfiles.value = list
         val currentId = prefRepository.selectedPrinterId
         val active = list.find { it.id == currentId } ?: list.firstOrNull()
-        if (active != null) {
-            _selectedPrinterId.value = active.id
+        val savedIp = prefRepository.printerIp
+        if (savedIp.isNotBlank()) {
+            _printerIp.value = savedIp
+            _printerPort.value = prefRepository.printerPort.toString()
+        } else if (active != null) {
             _printerIp.value = active.ip
             _printerPort.value = active.port.toString()
         }
+        if (active != null) {
+            _selectedPrinterId.value = active.id
+        }
+        _printerSimplex.value = prefRepository.printerSimplex
     }
 
     fun getEffectiveTeacherName(): String {
@@ -166,6 +173,7 @@ class RollCallViewModel(
     fun reloadSettings() {
         val prefName = prefRepository.teacherName
         _teacherName.value = prefName
+        _printerSimplex.value = prefRepository.printerSimplex
         reloadPrinterProfiles()
     }
 
@@ -328,6 +336,9 @@ class RollCallViewModel(
         if (allStudents.value.none { it.classCode == record.classCode }) {
             return "班级 ${record.classCode} 已不在当前名单中"
         }
+        if (record.statusSnapshot.isEmpty()) {
+            return "该历史记录未保存状态快照，无法恢复"
+        }
         _selectedClassCode.value = record.classCode
         studentRepository.applyStatuses(record.statusSnapshot)
         return null
@@ -350,6 +361,8 @@ class RollCallViewModel(
      * @param date 默认今天；补课或跨天点名时可在预览弹窗中修改后重新匹配。
      */
     fun startTmsSync(date: LocalDate = LocalDate.now()) {
+        val currentState = _tmsSyncState.value
+        if (currentState is TmsSyncState.Loading || currentState is TmsSyncState.Submitting) return
         val classCode = _selectedClassCode.value
         if (classCode.isNullOrBlank()) {
             _tmsSyncState.value = TmsSyncState.Error("请先选择班级")
@@ -460,6 +473,8 @@ class RollCallViewModel(
      * 检查最近 [days] 天（含今天）还有哪些本地班级没有在校管家点名。
      */
     fun startTmsCheck(days: Int = 1) {
+        val currentState = _tmsCheckState.value
+        if (currentState is TmsCheckState.Loading || currentState is TmsCheckState.Submitting) return
         val classNames = allStudents.value
             .groupBy { it.classCode }
             .values
@@ -794,7 +809,7 @@ class RollCallViewModel(
         viewModelScope.launch {
             _isExporting.value = true
             val countDesc = if (isTestOneSheet) "测试单页 (1张)" else "全班 (${students.size}张)"
-            Toast.makeText(context, "正在连接打印机 $ip:$port 发送 $countDesc...", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "正在连接打印机 $ip:$port 发送 $countDesc…", Toast.LENGTH_SHORT).show()
             try {
                 val pdfFile = withContext(Dispatchers.IO) {
                     com.jf.checkin.logic.NameplatePdfGenerator.generatePdfFile(
@@ -878,7 +893,7 @@ class RollCallViewModel(
         viewModelScope.launch {
             _isExporting.value = true
             val countDesc = if (isTestOneSheet) "测试单页 (1张)" else "全班 (${students.size}张)"
-            Toast.makeText(context, "正在连接 LPR 打印机 $ip:$port 发送 $countDesc...", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "正在连接 LPR 打印机 $ip:$port 发送 $countDesc…", Toast.LENGTH_SHORT).show()
             try {
                 val pdfFile = withContext(Dispatchers.IO) {
                     com.jf.checkin.logic.NameplatePdfGenerator.generatePdfFile(
@@ -931,7 +946,7 @@ class RollCallViewModel(
         viewModelScope.launch {
             _isExporting.value = true
             val countDesc = if (isTestOneSheet) "测试单页 (1张)" else "全班 (${students.size}张)"
-            Toast.makeText(context, "正在通过 FTP 投递打印任务至 $ip:$port ($countDesc)...", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "正在通过 FTP 投递打印任务至 $ip:$port ($countDesc)…", Toast.LENGTH_SHORT).show()
             try {
                 val pdfFile = withContext(Dispatchers.IO) {
                     com.jf.checkin.logic.NameplatePdfGenerator.generatePdfFile(

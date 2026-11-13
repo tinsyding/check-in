@@ -174,9 +174,9 @@ internal fun HomeworkSettingsCard(prefRepository: UserPrefRepository) {
                     )
                     Text(
                         text = if (serviceEnabled) {
-                            "在任意输入框输入 135qqq 即可自动展开。"
+                            "在任意输入框输入 135qqq 即可自动展开"
                         } else {
-                            "需要到系统设置中手动开启，点击本卡片可随时刷新检测。"
+                            "需要到系统设置中手动开启，点击本卡片可随时刷新检测"
                         },
                         style = MaterialTheme.typography.labelSmall,
                         color = InkTertiary,

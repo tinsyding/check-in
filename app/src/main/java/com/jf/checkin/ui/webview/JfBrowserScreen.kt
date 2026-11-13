@@ -196,7 +196,7 @@ fun JfBrowserScreen(
 
                             if (isStudentCsv) {
                                 isDownloading = true
-                                Toast.makeText(ctx, "检测到最新名单，正在自动下载与导入...", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(ctx, "检测到最新名单，正在自动下载与导入…", Toast.LENGTH_SHORT).show()
 
                                 coroutineScope.launch {
                                     try {
@@ -260,17 +260,25 @@ fun JfBrowserScreen(
  */
 private fun downloadCsvContent(urlStr: String, userAgent: String?, cookie: String?): String {
     val connection = URL(urlStr).openConnection() as HttpURLConnection
-    connection.requestMethod = "GET"
-    if (!userAgent.isNullOrBlank()) {
-        connection.setRequestProperty("User-Agent", userAgent)
-    }
-    if (!cookie.isNullOrBlank()) {
-        connection.setRequestProperty("Cookie", cookie)
-    }
-    connection.connectTimeout = 15000
-    connection.readTimeout = 15000
+    return try {
+        connection.requestMethod = "GET"
+        if (!userAgent.isNullOrBlank()) {
+            connection.setRequestProperty("User-Agent", userAgent)
+        }
+        if (!cookie.isNullOrBlank()) {
+            connection.setRequestProperty("Cookie", cookie)
+        }
+        connection.connectTimeout = 15000
+        connection.readTimeout = 15000
 
-    return connection.inputStream.use { input ->
-        BufferedReader(InputStreamReader(input, Charsets.UTF_8)).readText()
+        val code = connection.responseCode
+        if (code !in 200..299) {
+            throw IllegalStateException("下载CSV失败（HTTP $code），请确认已在网页登录")
+        }
+        connection.inputStream.use { input ->
+            BufferedReader(InputStreamReader(input, Charsets.UTF_8)).readText()
+        }
+    } finally {
+        connection.disconnect()
     }
 }

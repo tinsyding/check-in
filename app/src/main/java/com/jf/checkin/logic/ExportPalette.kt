@@ -29,9 +29,9 @@ object ExportPalette {
 
     /** 状态色 */
     val StatusLate = 0xFF9A4708.toInt()
-    val StatusLeave = 0xFF1D4ED8.toInt()
+    val StatusLeave = 0xFF2B4C7E.toInt()
     val StatusLeaveReplay = 0xFF0F766E.toInt()
-    val StatusOnline = 0xFF6D28D9.toInt()
+    val StatusOnline = 0xFF5B4B7A.toInt()
     val StatusUnchecked = 0xFF6F6559.toInt()
 
     /** 打印正文：纯黑，避免激光打印机半色调网点 */

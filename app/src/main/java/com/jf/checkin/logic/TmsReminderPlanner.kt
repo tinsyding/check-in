@@ -22,6 +22,10 @@ object TmsReminderPlanner {
     fun classNamesFor(students: List<Student>): List<String> {
         val classCode = students.firstOrNull()?.classCode ?: return emptyList()
         return students.asSequence()
+            .filter {
+                !it.isManual &&
+                    (it.originalClassCode.isBlank() || it.originalClassCode == it.classCode)
+            }
             .map { it.classFormat }
             .filter { TmsAttendanceMapper.isSyncableFormat(it) }
             .distinct()

@@ -17,6 +17,12 @@ class TextProcessorTest {
     }
 
     @Test
+    fun smartMode_fallsBackQuicklyOnOverlongDigitString() {
+        val longDigits = "1".repeat(50)
+        assertEquals(50, TextProcessor.parseNumbers(longDigits).size)
+    }
+
+    @Test
     fun smartMode_keepsExplicitSeparators() {
         assertEquals(listOf("1", "3", "12"), TextProcessor.parseNumbers("1 3 12"))
         assertEquals(listOf("1", "3", "5"), TextProcessor.parseNumbers("1,3,5"))

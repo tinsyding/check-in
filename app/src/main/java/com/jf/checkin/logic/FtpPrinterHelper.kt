@@ -68,12 +68,19 @@ object FtpPrinterHelper {
             // 4. 进入被动模式 (PASV)
             val pasvResp = sendCmd("PASV")
             val pStart = pasvResp.indexOf('(')
-            val pEnd = pasvResp.indexOf(')')
-            if (pStart == -1 || pEnd == -1) {
+            val pEnd = if (pStart >= 0) pasvResp.indexOf(')', startIndex = pStart + 1) else -1
+            if (pStart == -1 || pEnd <= pStart) {
                 throw RuntimeException("解析PASV失败: $pasvResp")
             }
             val parts = pasvResp.substring(pStart + 1, pEnd).split(',')
-            val dataPort = parts[4].trim().toInt() * 256 + parts[5].trim().toInt()
+            if (parts.size < 6) {
+                throw RuntimeException("PASV地址格式异常: $pasvResp")
+            }
+            val highByte = parts[4].trim().toIntOrNull()
+                ?: throw RuntimeException("PASV端口高位无效: $pasvResp")
+            val lowByte = parts[5].trim().toIntOrNull()
+                ?: throw RuntimeException("PASV端口低位无效: $pasvResp")
+            val dataPort = highByte * 256 + lowByte
 
             // 5. 连接数据端口
             dataSocket = Socket()

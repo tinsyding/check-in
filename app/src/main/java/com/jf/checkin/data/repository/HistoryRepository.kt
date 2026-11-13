@@ -19,6 +19,7 @@ class HistoryRepository(private val context: Context) {
         loadRecords()
     }
 
+    @Synchronized
     private fun loadRecords() {
         if (!historyFile.exists()) return
         try {
@@ -91,6 +92,7 @@ class HistoryRepository(private val context: Context) {
         }
     }
 
+    @Synchronized
     fun addRecord(record: AttendanceRecord) {
         // 新记录插入到最前
         val updated = listOf(record) + _records.value
@@ -98,6 +100,7 @@ class HistoryRepository(private val context: Context) {
         persistRecords(updated)
     }
 
+    @Synchronized
     fun deleteRecord(id: String) {
         val updated = _records.value.filter { it.id != id }
         _records.value = updated

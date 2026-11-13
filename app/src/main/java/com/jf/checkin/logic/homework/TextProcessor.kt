@@ -18,6 +18,7 @@ object TextProcessor {
     const val DEFAULT_TRIGGER = "qqq"
     const val DEFAULT_TEMPLATE = "本次作业的错题题号为：{nums}"
     const val DEFAULT_SEPARATOR = "，"
+    private const val MAX_SMART_SPLIT_LENGTH = 40
 
     /**
      * 提取题号列表。
@@ -52,7 +53,9 @@ object TextProcessor {
      * 若不存在递增切分，则退化为逐位拆分。
      */
     private fun smartSplitDigits(digits: String): List<String> {
-        if (digits.length <= 1) return digits.map { it.toString() }
+        if (digits.length <= 1 || digits.length > MAX_SMART_SPLIT_LENGTH) {
+            return digits.map { it.toString() }
+        }
 
         val n = digits.length
         val memo = HashMap<Pair<Int, String>, List<String>?>()

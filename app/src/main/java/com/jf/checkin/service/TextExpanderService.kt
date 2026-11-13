@@ -23,6 +23,7 @@ class TextExpanderService : AccessibilityService() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var isReplacing = false
     private var lastReplacedText: String? = null
+    private val resetReplacingRunnable = Runnable { isReplacing = false }
 
     private val prefs
         get() = (application as CheckInApplication).prefRepository
@@ -41,9 +42,10 @@ class TextExpanderService : AccessibilityService() {
         if (event.packageName?.toString() == packageName) return
 
         val source = event.source ?: return
+        var enteredReplace = false
         try {
-            // 只处理可编辑、可操作的文本框；密码框和超长文本直接跳过
-            if (!source.isEditable || !source.isEnabled || source.isPassword) return
+            // 只处理可编辑、可操作、非密码、非提示文本的文本框
+            if (!source.isEditable || !source.isEnabled || source.isPassword || source.isShowingHintText) return
 
             val currentText = source.text?.toString() ?: return
             if (currentText.isEmpty() || currentText.length > 2000) return
@@ -68,6 +70,7 @@ class TextExpanderService : AccessibilityService() {
             val newText = prefix + formatted + suffix
 
             isReplacing = true
+            enteredReplace = true
             lastReplacedText = newText
 
             val args = android.os.Bundle().apply {
@@ -90,8 +93,11 @@ class TextExpanderService : AccessibilityService() {
         } catch (error: Exception) {
             Log.e(TAG, "文本替换出错: ${error.message}", error)
         } finally {
-            // 延时解除防重入锁，避开文本变更回调的重入
-            mainHandler.postDelayed({ isReplacing = false }, REENTRY_DELAY_MS)
+            if (enteredReplace) {
+                // 延时解除防重入锁，避开文本变更回调的重入
+                mainHandler.removeCallbacks(resetReplacingRunnable)
+                mainHandler.postDelayed(resetReplacingRunnable, REENTRY_DELAY_MS)
+            }
             @Suppress("DEPRECATION")
             source.recycle()
         }
@@ -103,6 +109,8 @@ class TextExpanderService : AccessibilityService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        mainHandler.removeCallbacksAndMessages(null)
+        isReplacing = false
         isRunning = false
         Log.i(TAG, "错题自动展开服务已销毁")
     }

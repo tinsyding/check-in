@@ -222,6 +222,7 @@ data class TmsMissingReport(
  */
 class TmsAttendanceService {
 
+    private val sessionLock = Any()
     @Volatile private var session: TmsSession? = null
     @Volatile private var schoolHost: String = ""
     @Volatile private var campusId: String = ""
@@ -242,17 +243,22 @@ class TmsAttendanceService {
         // α1/β1 线上课程和 β2/β3 线下课程都同步到校管家。
         // 应用内线上学员默认是 ONLINE，同步时会按“已到并计费”处理；
         // 未到和请假（发回放）同样按出勤计费，请假（不发回放）按校管家“事假”提交。
+        // “手动调入 / 跨班临时调入”的学生没有本班对应的校管家课程；如果校管家某节课的学员名单里恰好有他们，
+        // 则按学号/姓名匹配进该课程，否则在预览里提示需要手工处理，避免虚构本班课程或阻塞同步。
+        val isMovedOrManual = { s: Student ->
+            s.isManual ||
+                s.classFormat == MANUAL_FORMAT ||
+                (s.originalClassCode.isNotBlank() && s.originalClassCode != s.classCode)
+        }
         val syncGroups = classStudents
             .filter {
-                it.classFormat != MANUAL_FORMAT &&
+                !isMovedOrManual(it) &&
                     TmsAttendanceMapper.isSyncableFormat(it.classFormat)
             }
             .groupBy { it.classFormat }
             .toSortedMap()
 
-        // “手动调入”的学生没有固定的校管家班级；如果校管家某节课的学员名单里恰好有他们，
-        // 则按学号/姓名匹配进该课程，否则在预览里提示需要手工处理。
-        val manualStudents = classStudents.filter { it.isManual || it.classFormat == MANUAL_FORMAT }
+        val manualStudents = classStudents.filter(isMovedOrManual)
 
         if (syncGroups.isEmpty() && manualStudents.isEmpty()) {
             throw IllegalStateException("当前班级没有需要同步的学生（α1/β1/β2/β3）")
@@ -333,7 +339,7 @@ class TmsAttendanceService {
 
         val unmatchedManual = manualStudents.filter { it.studentId !in matchedManualIds }
         if (unmatchedManual.isNotEmpty()) {
-            warnings += "以下手动调入学生未参与本次同步（未匹配或课程已跳过）：${
+            warnings += "以下临时调入/手动新增学生未参与本次同步（未匹配或课程已跳过）：${
                 unmatchedManual.joinToString("、") { it.name }
             }"
         }
@@ -485,9 +491,9 @@ class TmsAttendanceService {
 
             val matches = (0 until students.length()).mapNotNull { index ->
                 val student = students.optJSONObject(index) ?: return@mapNotNull null
-                val id = student.optString("ID")
+                val id = student.optCleanString("ID")
                 if (id.isBlank()) return@mapNotNull null
-                val rawName = student.optString("Name")
+                val rawName = student.optCleanString("Name")
                 val (_, name) = TmsAttendanceMapper.studentNumberAndName(rawName)
                 TmsStudentMatch(
                     appStudentId = id,
@@ -640,14 +646,14 @@ class TmsAttendanceService {
             if (tmsStudent == null) {
                 unmatched += appStudent
             } else {
-                val tmsId = tmsStudent.optString("ID")
+                val tmsId = tmsStudent.optCleanString("ID")
                 usedTmsIds += tmsId
                 matches += TmsStudentMatch(
                     appStudentId = appStudent.studentId,
                     appName = appStudent.name,
                     appStatus = appStudent.status,
                     tmsStudentId = tmsId,
-                    tmsName = tmsStudent.optString("Name")
+                    tmsName = tmsStudent.optCleanString("Name")
                 )
             }
         }
@@ -656,7 +662,7 @@ class TmsAttendanceService {
         for (manual in manualStudents) {
             if (manual.studentId in matchedManualIds) continue
             val tmsStudent = findTmsStudent(tmsStudents, manual, usedTmsIds) ?: continue
-            val tmsId = tmsStudent.optString("ID")
+            val tmsId = tmsStudent.optCleanString("ID")
             usedTmsIds += tmsId
             matchedManualIds += manual.studentId
             matches += TmsStudentMatch(
@@ -664,13 +670,13 @@ class TmsAttendanceService {
                 appName = manual.name,
                 appStatus = manual.status,
                 tmsStudentId = tmsId,
-                tmsName = tmsStudent.optString("Name")
+                tmsName = tmsStudent.optCleanString("Name")
             )
         }
 
         val tmsOnlyNames = (0 until tmsStudents.length()).mapNotNull { index ->
             val item = tmsStudents.optJSONObject(index) ?: return@mapNotNull null
-            if (item.optString("ID") in usedTmsIds) null else item.optString("Name")
+            if (item.optCleanString("ID") in usedTmsIds) null else item.optCleanString("Name")
         }
 
         val cost = TmsAttendanceMapper.computeCost(course)
@@ -759,7 +765,7 @@ class TmsAttendanceService {
 
             for (index in 0 until students.length()) {
                 val tmsStudent = students.optJSONObject(index) ?: continue
-                val match = matchById[tmsStudent.optString("ID")] ?: continue
+                val match = matchById[tmsStudent.optCleanString("ID")] ?: continue
                 applyStatus(tmsStudent, match.appStatus, plan.costAmount, absentCauseId)
             }
 
@@ -782,9 +788,12 @@ class TmsAttendanceService {
             val response = JSONObject(responseBody)
             val code = response.optInt("ErrorCode", -1)
             if (code != 200) {
+                if (code == 302 || code == 401 || code == 403 || code == 407) {
+                    invalidateSession()
+                }
                 val message = friendlyError(
                     code,
-                    response.optString("ErrorMsg"),
+                    response.optCleanString("ErrorMsg"),
                     "校管家返回错误码 $code"
                 )
                 TmsCourseResult(plan.className, false, message, plan.courseDate)
@@ -804,6 +813,9 @@ class TmsAttendanceService {
                 TmsCourseResult(plan.className, true, message, plan.courseDate)
             }
         } catch (e: TmsHttpException) {
+            if (e.code == 302 || e.code == 401 || e.code == 403 || e.code == 407) {
+                invalidateSession()
+            }
             TmsCourseResult(plan.className, false, e.friendlyMessage(), plan.courseDate)
         } catch (e: Exception) {
             TmsCourseResult(plan.className, false, e.localizedMessage ?: "同步失败", plan.courseDate)
@@ -851,8 +863,8 @@ class TmsAttendanceService {
         students: JSONArray
     ): JSONObject {
         val teacher = findMainTeacher(detail)
-        val teacherId = teacher?.optString("ID").orEmpty().ifBlank { EMPTY_GUID }
-        val teacherCommissionIds = teacher?.optString("TeacherCommissionIDs").orEmpty()
+        val teacherId = teacher?.optCleanString("ID").orEmpty().ifBlank { EMPTY_GUID }
+        val teacherCommissionIds = teacher?.optCleanString("TeacherCommissionIDs").orEmpty()
         val shiftAmount = detail.optDouble("shiftAmount", 0.0).let {
             if (it.isNaN()) 0.0 else it
         }
@@ -860,11 +872,11 @@ class TmsAttendanceService {
         return JSONObject().apply {
             put("Students", students)
             put("CourseID", plan.courseId ?: EMPTY_GUID)
-            put("Describe", detail.optString("describe"))
-            put("Content", detail.optString("content"))
+            put("Describe", detail.optCleanString("describe"))
+            put("Content", detail.optCleanString("content"))
             put("shiftAmount", shiftAmount)
             put("ShiftScheduleID", findShiftScheduleId(detail, shiftAmount))
-            put("UpdateTime", detail.optString("updateTime"))
+            put("UpdateTime", detail.optCleanString("updateTime"))
             put("Action", 1)
             // 自动同步不发送微信/短信通知。
             put("Weixin", 0)
@@ -892,7 +904,7 @@ class TmsAttendanceService {
             val item = list.optJSONObject(index) ?: continue
             val amount = item.optDouble("ShiftAmount", 0.0)
             if (amount == shiftAmount) {
-                return item.optString("ID").ifBlank { EMPTY_GUID }
+                return item.optCleanString("ID").ifBlank { EMPTY_GUID }
             }
         }
         return EMPTY_GUID
@@ -910,10 +922,10 @@ class TmsAttendanceService {
         // 先按学号精确匹配（支持去掉前导 0 后的数字比较）。
         for (index in 0 until tmsStudents.length()) {
             val candidate = tmsStudents.optJSONObject(index) ?: continue
-            val candidateId = candidate.optString("ID")
+            val candidateId = candidate.optCleanString("ID")
             if (candidateId in usedTmsIds) continue
 
-            val (tmsNumber, _) = TmsAttendanceMapper.studentNumberAndName(candidate.optString("Name"))
+            val (tmsNumber, _) = TmsAttendanceMapper.studentNumberAndName(candidate.optCleanString("Name"))
             if (appId.isNotBlank() && tmsNumber == appId) return candidate
             if (appIdNumeric != null && tmsNumber.toLongOrNull() == appIdNumeric) return candidate
         }
@@ -923,10 +935,10 @@ class TmsAttendanceService {
         val nameMatches = mutableListOf<JSONObject>()
         for (index in 0 until tmsStudents.length()) {
             val candidate = tmsStudents.optJSONObject(index) ?: continue
-            val candidateId = candidate.optString("ID")
+            val candidateId = candidate.optCleanString("ID")
             if (candidateId in usedTmsIds) continue
 
-            val rawName = candidate.optString("Name")
+            val rawName = candidate.optCleanString("Name")
             val (_, tmsName) = TmsAttendanceMapper.studentNumberAndName(rawName)
             if (tmsName == appName || TmsAttendanceMapper.normalizeName(rawName) == appName) {
                 nameMatches += candidate
@@ -936,11 +948,13 @@ class TmsAttendanceService {
     }
 
     private fun invalidateSession() {
-        session = null
-        schoolHost = ""
-        campusId = ""
-        cachedUsername = ""
-        cachedPassword = ""
+        synchronized(sessionLock) {
+            session = null
+            schoolHost = ""
+            campusId = ""
+            cachedUsername = ""
+            cachedPassword = ""
+        }
     }
 
     private fun friendlyError(code: Int, message: String, fallback: String): String {
@@ -987,7 +1001,7 @@ class TmsAttendanceService {
             throw IllegalStateException(
                 friendlyError(
                     courseQueryCode,
-                    response.optString("ErrorMsg"),
+                    response.optCleanString("ErrorMsg"),
                     "读取校管家课程失败"
                 )
             )
@@ -995,20 +1009,20 @@ class TmsAttendanceService {
         val array = response.optJSONArray("Data") ?: return emptyList()
         return (0 until array.length()).mapNotNull { index ->
             val course = array.optJSONObject(index) ?: return@mapNotNull null
-            val id = course.optString("ID")
-            val className = course.optString("ClassName")
+            val id = course.optCleanString("ID")
+            val className = course.optCleanString("ClassName")
             if (id.isBlank() || className.isBlank()) return@mapNotNull null
             TmsCourseSummary(
                 id = id,
                 className = className,
-                startTime = course.optString("StartTime"),
-                endTime = course.optString("EndTime"),
+                startTime = course.optCleanString("StartTime"),
+                endTime = course.optCleanString("EndTime"),
                 finished = course.optInt("Finished", 0),
                 attendanceCount = course.optInt("AttendanceCount", 0),
-                lastAttendTime = course.optString("LastAttendTime"),
+                lastAttendTime = course.optCleanString("LastAttendTime"),
                 studentCount = course.optInt("StudentCount", 0),
                 unitCode = course.optInt("Unit", 2),
-                durationMinutes = TmsAttendanceMapper.durationMinutes(course.optString("Duration")),
+                durationMinutes = TmsAttendanceMapper.durationMinutes(course.optCleanString("Duration")),
                 minutesToTimes = course.optInt("MinutesToTimes", 0),
                 standardMinutes = course.optDouble("StandardMinutes", 0.0).let {
                     if (it.isNaN()) 0.0 else it
@@ -1036,7 +1050,7 @@ class TmsAttendanceService {
             throw IllegalStateException(
                 friendlyError(
                     attendanceCode,
-                    response.optString("ErrorMsg"),
+                    response.optCleanString("ErrorMsg"),
                     "读取校管家课程学员失败"
                 )
             )
@@ -1078,7 +1092,7 @@ class TmsAttendanceService {
                 }
                 (0 until array.length()).mapNotNull { index ->
                     array.optJSONObject(index)
-                        ?.optString("StudentName")
+                        ?.optCleanString("StudentName")
                         ?.takeIf { it.isNotBlank() }
                 }
             }
@@ -1091,17 +1105,17 @@ class TmsAttendanceService {
     private fun namesOf(array: JSONArray?): List<String> {
         if (array == null) return emptyList()
         return (0 until array.length()).mapNotNull { index ->
-            array.optJSONObject(index)?.optString("Name")?.takeIf { it.isNotBlank() }
+            array.optJSONObject(index)?.optCleanString("Name")?.takeIf { it.isNotBlank() }
         }
     }
 
-    private fun ensureSession(credentials: TmsCredentials): TmsSession {
+    private fun ensureSession(credentials: TmsCredentials): TmsSession = synchronized(sessionLock) {
         val existing = session
         if (existing != null &&
             cachedUsername == credentials.username &&
             cachedPassword == credentials.password
         ) {
-            return existing
+            return@synchronized existing
         }
 
         if (credentials.username.isBlank() || credentials.password.isBlank()) {
@@ -1141,11 +1155,11 @@ class TmsAttendanceService {
         }
         if (loginResponse.optInt("ErrorCode", -1) != 200) {
             throw IllegalStateException(
-                loginResponse.optString("ErrorMsg").ifBlank { "校管家登录失败，请检查账号密码" }
+                loginResponse.optCleanString("ErrorMsg").ifBlank { "校管家登录失败，请检查账号密码" }
             )
         }
 
-        val host = loginResponse.optString("ErrorMsg")
+        val host = loginResponse.optCleanString("ErrorMsg")
             .trim()
             .lowercase(Locale.ROOT)
             .removePrefix("https://")
@@ -1182,14 +1196,14 @@ class TmsAttendanceService {
         val whoami = newSession.getJson("https://$host/api/user/whoami")
         if (whoami.optInt("ErrorCode", -1) != 200) {
             throw IllegalStateException(
-                whoami.optString("ErrorMsg").ifBlank { "校管家登录状态校验失败" }
+                whoami.optCleanString("ErrorMsg").ifBlank { "校管家登录状态校验失败" }
             )
         }
         val data = whoami.optJSONObject("Data")
             ?: throw IllegalStateException("校管家没有返回用户信息")
         val campus = data.optJSONArray("CampusList")?.optJSONObject(0)
             ?: throw IllegalStateException("校管家账号没有可用校区")
-        val id = campus.optString("ID")
+        val id = campus.optCleanString("ID")
         if (id.isBlank()) {
             throw IllegalStateException("校管家账号没有可用校区")
         }
@@ -1199,7 +1213,7 @@ class TmsAttendanceService {
         cachedUsername = credentials.username
         cachedPassword = credentials.password
         session = newSession
-        return newSession
+        return@synchronized newSession
     }
 
     companion object {
@@ -1272,11 +1286,7 @@ internal object TmsAttendanceMapper {
         if (value.length >= 10 && value[4] == '-' && value[7] == '-') {
             return value.take(10)
         }
-        return try {
-            LocalDateTime.parse(value).toLocalDate().toString()
-        } catch (_: Exception) {
-            ""
-        }
+        return tmsDateTime(value)?.toLocalDate()?.toString() ?: ""
     }
 
     fun displayTime(start: String, end: String): String {
@@ -1369,11 +1379,11 @@ internal object TmsAttendanceMapper {
                 }
             }
             is JSONObject -> {
-                val name = value.optString("Name")
-                    .ifBlank { value.optString("AbsentCauseName") }
+                val name = value.optCleanString("Name")
+                    .ifBlank { value.optCleanString("AbsentCauseName") }
                 if (name.contains(causeName)) {
-                    val id = value.optString("AbsentCauseID")
-                        .ifBlank { value.optString("ID") }
+                    val id = value.optCleanString("AbsentCauseID")
+                        .ifBlank { value.optCleanString("ID") }
                     if (id.isNotBlank()) return id
                 }
                 for (key in value.keys()) {
@@ -1425,21 +1435,18 @@ internal object TmsAttendanceMapper {
     }
 
     fun lastClassTime(start: String, end: String): String {
-        val date = start.take(10)
+        val date = tmsDate(start).ifBlank { start.take(10) }
         val startText = tmsTime(start)
         val endText = tmsTime(end)
-        val weekday = try {
-            when (LocalDateTime.parse(start).dayOfWeek.value) {
-                1 -> "周一"
-                2 -> "周二"
-                3 -> "周三"
-                4 -> "周四"
-                5 -> "周五"
-                6 -> "周六"
-                else -> "周日"
-            }
-        } catch (_: Exception) {
-            ""
+        val weekday = when (tmsDateTime(start)?.dayOfWeek?.value) {
+            1 -> "周一"
+            2 -> "周二"
+            3 -> "周三"
+            4 -> "周四"
+            5 -> "周五"
+            6 -> "周六"
+            7 -> "周日"
+            else -> ""
         }
         return "$date$startText-$endText[$weekday]"
     }
@@ -1596,6 +1603,7 @@ private class TmsSession {
         }
     }
 
+    @Synchronized
     private fun storeCookies(host: String, connection: HttpURLConnection) {
         val hostCookies = cookies.getOrPut(host) { mutableMapOf() }
         for ((key, values) in connection.headerFields) {
@@ -1612,6 +1620,7 @@ private class TmsSession {
         }
     }
 
+    @Synchronized
     private fun cookieHeader(host: String): String {
         return cookies[host]?.entries?.joinToString("; ") { "${it.key}=${it.value}" }.orEmpty()
     }
@@ -1631,9 +1640,14 @@ private class TmsHttpException(val code: Int, val body: String) :
             return "校管家登录已过期，请关闭后重新同步"
         }
         return try {
-            JSONObject(body).optString("ErrorMsg").ifBlank { "HTTP $code" }
+            JSONObject(body).optCleanString("ErrorMsg").ifBlank { "HTTP $code" }
         } catch (_: Exception) {
             "HTTP $code"
         }
     }
+}
+
+private fun JSONObject.optCleanString(key: String): String {
+    val value = opt(key)
+    return if (value == null || value === JSONObject.NULL) "" else value.toString()
 }

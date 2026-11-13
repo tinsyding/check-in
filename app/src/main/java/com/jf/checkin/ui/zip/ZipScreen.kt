@@ -26,7 +26,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -337,11 +336,12 @@ private fun DateStamp(prefix: String) {
     ) {
         Text(
             text = prefix,
-            fontFamily = FontFamily.Monospace,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
+            style = MaterialTheme.typography.bodySmall.copy(
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Medium,
+                fontFeatureSettings = "tnum",
+            ),
             color = InkSecondary,
-            letterSpacing = 0.2.sp,
         )
     }
 }
@@ -465,8 +465,10 @@ private fun SectionHeader(count: Int, onClear: () -> Unit) {
         if (count > 0) {
             Text(
                 text = "$count 张",
-                fontFamily = FontFamily.Monospace,
-                fontSize = 11.sp,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontFamily = FontFamily.Monospace,
+                    fontFeatureSettings = "tnum",
+                ),
                 color = InkTertiary,
             )
             Spacer(modifier = Modifier.width(Spacing.Md))
@@ -498,22 +500,24 @@ private fun ImageCell(uri: Uri, index: Int, onRemove: () -> Unit) {
             modifier = Modifier.fillMaxSize(),
         )
         Text(
-            text = (index + 1).toString().padStart(2, '0'),
-            fontFamily = FontFamily.Monospace,
-            fontSize = 10.sp,
+            text = (index + 1).toString(),
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontFamily = FontFamily.Monospace,
+                fontFeatureSettings = "tnum",
+            ),
             color = InkPrimary,
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(Spacing.Xs)
                 .background(PaperSurface.copy(alpha = 0.92f), RoundedCornerShape(Radii.Chip))
-                .padding(horizontal = Spacing.Xs, vertical = 1.dp),
+                .padding(horizontal = Spacing.Xs, vertical = 2.dp),
         )
         Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(Spacing.Xs)
-                .size(26.dp)
-                .clip(CircleShape)
+                .size(24.dp)
+                .clip(RoundedCornerShape(Radii.Chip))
                 .background(PaperSurface.copy(alpha = 0.92f))
                 .clickable(onClick = onRemove),
             contentAlignment = Alignment.Center,
@@ -522,7 +526,7 @@ private fun ImageCell(uri: Uri, index: Int, onRemove: () -> Unit) {
                 imageVector = Icons.Default.Close,
                 contentDescription = "移除",
                 tint = InkSecondary,
-                modifier = Modifier.size(13.dp),
+                modifier = Modifier.size(16.dp),
             )
         }
     }
@@ -542,7 +546,7 @@ private fun AddCell(onPick: () -> Unit) {
             imageVector = Icons.Default.Add,
             contentDescription = "添加图片",
             tint = InkTertiary,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(18.dp),
         )
     }
 }
@@ -565,7 +569,7 @@ private fun EmptyPick(
             imageVector = Icons.Default.Add,
             contentDescription = null,
             tint = InkTertiary,
-            modifier = Modifier.size(26.dp),
+            modifier = Modifier.size(24.dp),
         )
         Spacer(modifier = Modifier.height(Spacing.Md))
         Text(
@@ -648,9 +652,11 @@ private fun BottomAction(
 
                 is BuildState.Building -> {
                     Text(
-                        text = "${build.done.toString().padStart(2, '0')} / ${build.total}",
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
+                        text = "${build.done} / ${build.total}",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontFeatureSettings = "tnum",
+                        ),
                         color = InkTertiary,
                     )
                     Spacer(modifier = Modifier.height(Spacing.Sm))
@@ -660,7 +666,7 @@ private fun BottomAction(
                         },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(2.dp),
+                            .height(4.dp),
                         color = InkPrimary,
                         trackColor = Hairline,
                     )
@@ -709,19 +715,20 @@ private fun ReadySummary(archive: ReadyArchive) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = archive.name,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 13.sp,
+                style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
                 color = InkPrimary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(modifier = Modifier.height(2.dp))
+            Spacer(modifier = Modifier.height(Spacing.Xs))
             Text(
                 text = "${archive.count} 张 · ${
                     Formatter.formatShortFileSize(context, archive.size)
                 }",
-                fontFamily = FontFamily.Monospace,
-                fontSize = 11.sp,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontFamily = FontFamily.Monospace,
+                    fontFeatureSettings = "tnum",
+                ),
                 color = InkTertiary,
             )
         }

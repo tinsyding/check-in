@@ -47,9 +47,9 @@ val DangerSoft = Color(0xFFFBEAE8)
 /** 状态徽章/中性 chip 底色 */
 val BadgeBackground = Color(0xFFF2EEE6)
 
-// 语义状态色：只做圆点、3dp 边和文字强调，不铺整面背景
+// 语义状态色：只做圆点、4dp 边和文字强调，统一收进暖纸低饱和色域
 val StatusLateInk = Color(0xFF9A4708)
-val StatusLeaveInk = Color(0xFF1D4ED8)
+val StatusLeaveInk = Color(0xFF2B4C7E)
 val StatusLeaveReplayInk = Color(0xFF0F766E)
-val StatusOnlineInk = Color(0xFF6D28D9)
+val StatusOnlineInk = Color(0xFF5B4B7A)
 val StatusUncheckedInk = Color(0xFF6F6559)

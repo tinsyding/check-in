@@ -61,10 +61,11 @@ class StudentRepository(private val prefRepo: UserPrefRepository) {
             val remark = m.remark.ifBlank { remarks[m.studentId] ?: "" }
             merged.add(m.copy(status = AttendanceStatus.UNCHECKED, remark = remark))
         }
-        // 叠加持久化的签到状态（重启 App 后保留）
+        // 叠加持久化的签到状态（重启 App 后保留）；原生线上学生始终保持 ONLINE
         val statuses = prefRepo.getAttendanceStatuses()
         if (statuses.isNotEmpty()) {
             for (i in merged.indices) {
+                if (!StudentCsvParser.isOfflineStudent(merged[i])) continue
                 val name = statuses[merged[i].studentId] ?: continue
                 val st = try {
                     AttendanceStatus.valueOf(name)
@@ -167,6 +168,10 @@ class StudentRepository(private val prefRepo: UserPrefRepository) {
         val current = _students.value
         val student = current.find { it.studentId == studentId } ?: return "未找到该学生"
         if (student.classCode == code) return "该学生已在 $code"
+        // 若目标班就是原班级，等价于撤销调动并清除 originalClassCode / 调动记录
+        if (student.originalClassCode.isNotBlank() && code == student.originalClassCode) {
+            return returnMovedStudent(studentId)
+        }
         val targetTime = current.firstOrNull { it.classCode == code }?.classTime
             ?: return "目标班级 $code 不存在"
         // 保留最早的原班级，连续调动 A→B→C 仍记住 A，方便一键调回
@@ -200,7 +205,11 @@ class StudentRepository(private val prefRepo: UserPrefRepository) {
         val student = current.find { it.studentId == studentId } ?: return "未找到该学生"
         val origin = student.originalClassCode.trim()
         if (origin.isEmpty()) return "该学生不在调动中"
-        val originTime = current.firstOrNull { it.classCode == origin }?.classTime ?: student.classTime
+        val originTime = current.firstOrNull { it.classCode == origin }?.classTime
+            ?: prefRepo.lastCsvContent.takeIf { it.isNotBlank() }?.let { csv ->
+                StudentCsvParser.parse(csv).firstOrNull { it.classCode == origin }?.classTime
+            }
+            ?: student.classTime
         if (student.isManual) {
             val manual = prefRepo.getManualStudents()
             prefRepo.saveManualStudents(manual.map {
@@ -308,7 +317,7 @@ class StudentRepository(private val prefRepo: UserPrefRepository) {
     /** 只持久化非默认状态，保持 prefs 精简 */
     private fun persistStatuses() {
         val map = _students.value
-            .filter { it.status != AttendanceStatus.UNCHECKED }
+            .filter { it.status != StudentCsvParser.defaultStatus(it) }
             .associate { it.studentId to it.status.name }
         prefRepo.saveAttendanceStatuses(map)
     }

@@ -182,7 +182,6 @@ fun StudentCard(
                         Text(
                             text = status.label,
                             style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.SemiBold,
                             color = status.accent,
                             maxLines = 1
                         )
@@ -350,7 +349,7 @@ private fun StatusMenuItem(
             Text(
                 label,
                 color = InkPrimary,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+                fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal
             )
         },
         leadingIcon = {

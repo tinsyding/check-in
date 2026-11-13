@@ -41,13 +41,26 @@ class PdfPrintAdapter(
         cancellationSignal: CancellationSignal?,
         callback: WriteResultCallback?
     ) {
+        if (cancellationSignal?.isCanceled == true) {
+            callback?.onWriteCancelled()
+            return
+        }
+        val fd = destination?.fileDescriptor
+        if (fd == null) {
+            callback?.onWriteFailed("打印输出目标无效")
+            return
+        }
         try {
             FileInputStream(file).use { input ->
-                FileOutputStream(destination?.fileDescriptor).use { output ->
+                FileOutputStream(fd).use { output ->
                     input.copyTo(output)
                 }
             }
-            callback?.onWriteFinished(arrayOf(PageRange.ALL_PAGES))
+            if (cancellationSignal?.isCanceled == true) {
+                callback?.onWriteCancelled()
+            } else {
+                callback?.onWriteFinished(arrayOf(PageRange.ALL_PAGES))
+            }
         } catch (e: Exception) {
             callback?.onWriteFailed(e.message)
         }

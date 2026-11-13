@@ -424,6 +424,14 @@ class TmsAttendanceMapperTest {
     }
 
     @Test
+    fun lastClassTimeSupportsSpaceSeparatedDatetime() {
+        assertEquals(
+            "2026-10-2407:50-09:50[周六]",
+            TmsAttendanceMapper.lastClassTime("2026-10-24 07:50:00", "2026-10-24 09:50:00")
+        )
+    }
+
+    @Test
     fun missingReportCountsOnlySubmittableCourses() {
         val ready = TmsMissingCourse(
             date = "2026-10-24",

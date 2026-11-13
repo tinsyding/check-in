@@ -140,6 +140,17 @@ class TmsReminderPlannerTest {
     }
 
     @Test
+    fun `excludes temporarily moved-in students from classNamesFor`() {
+        val students = listOf(
+            student("1", "A", "周六07:50~09:50", "β3"),
+            student("2", "A", "周六07:50~09:50", "β2").copy(originalClassCode = "B"),
+            student("3", "A", "周六07:50~09:50", "β2").copy(isManual = true)
+        )
+
+        assertEquals(listOf("Aβ3"), TmsReminderPlanner.classNamesFor(students))
+    }
+
+    @Test
     fun `sorts pending classes by class time`() {
         val students = listOf(
             student("1", "Late", "周六15:00~17:00", "β2"),

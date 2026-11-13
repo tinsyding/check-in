@@ -378,13 +378,27 @@ object TableImageGenerator {
 
                 val uri: Uri? = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
                 if (uri != null) {
-                    resolver.openOutputStream(uri)?.use { out ->
-                        targetBitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                    try {
+                        val stream = resolver.openOutputStream(uri)
+                        if (stream == null) {
+                            resolver.delete(uri, null, null)
+                            return false
+                        }
+                        val compressed = stream.use { out ->
+                            targetBitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                        }
+                        if (!compressed) {
+                            resolver.delete(uri, null, null)
+                            return false
+                        }
+                        values.clear()
+                        values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                        resolver.update(uri, values, null, null)
+                        return true
+                    } catch (e: Exception) {
+                        resolver.delete(uri, null, null)
+                        throw e
                     }
-                    values.clear()
-                    values.put(MediaStore.Images.Media.IS_PENDING, 0)
-                    resolver.update(uri, values, null, null)
-                    return true
                 }
             }
             return false

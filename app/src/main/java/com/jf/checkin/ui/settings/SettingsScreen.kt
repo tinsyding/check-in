@@ -504,7 +504,7 @@ fun SettingsScreen(
                                                         color = InkOnDark,
                                                         modifier = Modifier.padding(
                                                             horizontal = Spacing.Xs,
-                                                            vertical = 1.dp
+                                                            vertical = 2.dp
                                                         )
                                                     )
                                                 }
@@ -636,7 +636,7 @@ fun SettingsScreen(
                             verticalArrangement = Arrangement.spacedBy(Spacing.Xs)
                         ) {
                             Text(
-                                text = "当前已录入线下学生：${students.size} 人",
+                                text = "当前已录入学生：${students.size} 人",
                                 style = MaterialTheme.typography.titleSmall.copy(fontFeatureSettings = "tnum"),
                                 color = InkPrimary
                             )

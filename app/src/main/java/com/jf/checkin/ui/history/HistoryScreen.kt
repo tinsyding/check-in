@@ -198,7 +198,7 @@ fun HistoryScreen(
                             ) {
                                 StatusChip(label = "实到 ${record.presentCount}", accent = RedPen)
                                 if (record.onlineCount > 0) {
-                                    StatusChip(label = "转线上 ${record.onlineCount}", accent = StatusOnlineInk)
+                                    StatusChip(label = "线上 ${record.onlineCount}", accent = StatusOnlineInk)
                                 }
                                 if (record.lateCount > 0) {
                                     StatusChip(label = "迟到 ${record.lateCount}", accent = StatusLateInk)
@@ -311,7 +311,7 @@ private fun StatusChip(label: String, accent: Color) {
         ) {
             Box(
                 modifier = Modifier
-                    .size(6.dp)
+                    .size(8.dp)
                     .background(accent, CircleShape)
             )
             Spacer(modifier = Modifier.width(Spacing.Xs))

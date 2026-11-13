@@ -202,15 +202,18 @@ object NameplatePdfGenerator {
         fontStyle: NameplateFontStyle = NameplateFontStyle.CURSIVE
     ): File {
         val document = buildPdfDocument(context, classCode, students, onlyFirstStudent, fontStyle)
-        val exportDir = File(context.cacheDir, "attendance_exports").apply { mkdirs() }
-        val prefix = if (onlyFirstStudent) "席卡测试单页" else "席卡"
-        val filename = "${prefix}_${classCode}_${System.currentTimeMillis()}.pdf"
-        val file = File(exportDir, filename)
-        FileOutputStream(file).use { out ->
-            document.writeTo(out)
+        try {
+            val exportDir = File(context.cacheDir, "attendance_exports").apply { mkdirs() }
+            val prefix = if (onlyFirstStudent) "席卡测试单页" else "席卡"
+            val filename = "${prefix}_${classCode}_${System.currentTimeMillis()}.pdf"
+            val file = File(exportDir, filename)
+            FileOutputStream(file).use { out ->
+                document.writeTo(out)
+            }
+            return file
+        } finally {
+            document.close()
         }
-        document.close()
-        return file
     }
 
     /**
@@ -224,51 +227,62 @@ object NameplatePdfGenerator {
         fontStyle: NameplateFontStyle = NameplateFontStyle.CURSIVE
     ): Boolean {
         val document = buildPdfDocument(context, classCode, students, onlyFirstStudent, fontStyle)
-        val prefix = if (onlyFirstStudent) "席卡测试单页" else "席卡"
-        val filename = "${prefix}_${classCode}_${System.currentTimeMillis()}.pdf"
-        val resolver = context.contentResolver
+        try {
+            val prefix = if (onlyFirstStudent) "席卡测试单页" else "席卡"
+            val filename = "${prefix}_${classCode}_${System.currentTimeMillis()}.pdf"
+            val resolver = context.contentResolver
 
-        // Android 8/9：直接写入公共 Downloads 目录，再插入 MediaStore 供文件管理器索引
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            val targetDir = File(
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                "班级席卡"
-            ).apply { mkdirs() }
-            val targetFile = File(targetDir, filename)
-            FileOutputStream(targetFile).use { out ->
-                document.writeTo(out)
-            }
-            val values = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
-                put(MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
-                put(MediaStore.MediaColumns.DATA, targetFile.absolutePath)
-            }
-            resolver.insert(MediaStore.Files.getContentUri("external"), values)
-            document.close()
-            return true
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val values = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
-                put(MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
-                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/班级席卡")
-                put(MediaStore.MediaColumns.IS_PENDING, 1)
-            }
-
-            val uri: Uri? = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-            if (uri != null) {
-                resolver.openOutputStream(uri)?.use { out ->
+            // Android 8/9：直接写入公共 Downloads 目录，再插入 MediaStore 供文件管理器索引
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                val targetDir = File(
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                    "班级席卡"
+                ).apply { mkdirs() }
+                val targetFile = File(targetDir, filename)
+                FileOutputStream(targetFile).use { out ->
                     document.writeTo(out)
                 }
-                values.clear()
-                values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                resolver.update(uri, values, null, null)
-                document.close()
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+                    put(MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
+                    put(MediaStore.MediaColumns.DATA, targetFile.absolutePath)
+                }
+                resolver.insert(MediaStore.Files.getContentUri("external"), values)
                 return true
             }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+                    put(MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/班级席卡")
+                    put(MediaStore.MediaColumns.IS_PENDING, 1)
+                }
+
+                val uri: Uri? = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                if (uri != null) {
+                    try {
+                        val stream = resolver.openOutputStream(uri)
+                        if (stream == null) {
+                            resolver.delete(uri, null, null)
+                            return false
+                        }
+                        stream.use { out ->
+                            document.writeTo(out)
+                        }
+                        values.clear()
+                        values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                        resolver.update(uri, values, null, null)
+                        return true
+                    } catch (e: Exception) {
+                        resolver.delete(uri, null, null)
+                        throw e
+                    }
+                }
+            }
+            return false
+        } finally {
+            document.close()
         }
-        document.close()
-        return false
     }
 }
