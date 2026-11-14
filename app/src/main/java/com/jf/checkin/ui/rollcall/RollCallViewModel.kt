@@ -514,10 +514,14 @@ class RollCallViewModel(
         }
     }
 
-    /** 对检查结果中的未考勤课程一键考勤：按校管家名单全员出勤并计费。 */
-    fun submitMissingAttendance() {
+    /** 对检查结果中勾选的未考勤学员一键考勤：按校管家名单标记出勤并计费。 */
+    fun submitMissingAttendance(selectedStudentIdsByCourse: Map<String, Set<String>>) {
         val report = lastMissingReport ?: return
         if (!report.canSubmit) return
+        val hasAnySelected = report.submittableCourses.any {
+            !selectedStudentIdsByCourse[it.courseId].isNullOrEmpty()
+        }
+        if (!hasAnySelected) return
 
         val username = prefRepository.tmsUsername
         val password = prefRepository.tmsPassword
@@ -534,7 +538,8 @@ class RollCallViewModel(
             try {
                 val results = tmsService.submitMissingAttendance(
                     report,
-                    TmsCredentials(username, password)
+                    TmsCredentials(username, password),
+                    selectedStudentIdsByCourse
                 )
                 val syncedByDate = results.filter { it.success && it.date.isNotBlank() }
                     .groupBy { it.date }

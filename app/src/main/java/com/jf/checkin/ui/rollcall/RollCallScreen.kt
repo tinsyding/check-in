@@ -541,12 +541,12 @@ fun RollCallScreen(
         }
     )
 
-    // 检查今天/最近三日未考勤班级，并支持一键考勤
+    // 检查今天/最近三日未考勤班级，并支持勾选学员一键考勤
     TmsCheckDialogs(
         state = tmsCheckState,
         onDismiss = { viewModel.clearTmsCheckState() },
         onReload = { days -> viewModel.startTmsCheck(days) },
-        onSubmit = { viewModel.submitMissingAttendance() },
+        onSubmit = { selected -> viewModel.submitMissingAttendance(selected) },
         onNavigateToSettings = {
             viewModel.clearTmsCheckState()
             onNavigateToSettings()
@@ -1850,7 +1850,7 @@ private fun TmsCheckDialogs(
     state: TmsCheckState,
     onDismiss: () -> Unit,
     onReload: (Int) -> Unit,
-    onSubmit: () -> Unit,
+    onSubmit: (Map<String, Set<String>>) -> Unit,
     onNavigateToSettings: () -> Unit
 ) {
     when (state) {
@@ -1860,8 +1860,8 @@ private fun TmsCheckDialogs(
             message = "正在读取课程和点名状态，请稍候…"
         )
         TmsCheckState.Submitting -> TmsBusyDialog(
-            title = "正在一键考勤",
-            message = "正在按校管家名单全员出勤并计费，请勿关闭应用…"
+            title = "正在考勤",
+            message = "正在按所选学员提交出勤并计费，请勿关闭应用…"
         )
         is TmsCheckState.Report -> TmsMissingReportDialog(
             report = state.report,
@@ -1886,9 +1886,29 @@ private fun TmsMissingReportDialog(
     report: TmsMissingReport,
     onDismiss: () -> Unit,
     onReload: (Int) -> Unit,
-    onSubmit: () -> Unit
+    onSubmit: (Map<String, Set<String>>) -> Unit
 ) {
     var showConfirm by remember { mutableStateOf(false) }
+    var selectedIdsByCourse by remember(report) {
+        mutableStateOf(
+            report.submittableCourses.associate { course ->
+                course.courseId to course.missingStudents
+                    .filter { !it.isLeave }
+                    .map { it.tmsStudentId }
+                    .toSet()
+            }
+        )
+    }
+    val selectedCourses = remember(report, selectedIdsByCourse) {
+        report.submittableCourses.mapNotNull { course ->
+            val selectedIds = selectedIdsByCourse[course.courseId].orEmpty()
+            val students = course.missingStudents.filter { it.tmsStudentId in selectedIds }
+            if (students.isEmpty()) null else course to students
+        }
+    }
+    val selectedCourseCount = selectedCourses.size
+    val selectedStudentCount = selectedCourses.sumOf { it.second.size }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("校管家考勤检查") },
@@ -1919,9 +1939,16 @@ private fun TmsMissingReportDialog(
                 )
 
                 if (report.courses.isEmpty()) {
+                    val allCompleted = report.checkedCourseCount > 0 && report.warnings.isEmpty()
+                    val statusColor = if (allCompleted) StatusLeaveReplayInk else StatusLateInk
+                    val statusText = when {
+                        allCompleted -> "没有发现未考勤的班级，考勤已全部完成"
+                        report.checkedCourseCount == 0 -> "未检查到已开始的匹配课程，请查看下方提示"
+                        else -> "未发现可一键考勤的课程，请留意下方提示"
+                    }
                     Surface(
                         shape = RoundedCornerShape(Radii.Control),
-                        color = PaperSurface,
+                        color = if (allCompleted) PaperSurface else PaperSunken,
                         border = androidx.compose.foundation.BorderStroke(1.dp, Hairline),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -1930,17 +1957,17 @@ private fun TmsMissingReportDialog(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                Icons.Default.Check,
+                                if (allCompleted) Icons.Default.Check else Icons.Default.Schedule,
                                 contentDescription = null,
-                                tint = StatusLeaveReplayInk,
+                                tint = statusColor,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "没有发现未考勤的班级，考勤已全部完成",
+                                text = statusText,
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Medium,
-                                color = StatusLeaveReplayInk
+                                color = statusColor
                             )
                         }
                     }
@@ -1953,20 +1980,37 @@ private fun TmsMissingReportDialog(
                     ) {
                         Column(modifier = Modifier.padding(Spacing.Md)) {
                             Text(
-                                text = "发现 ${report.courses.size} 节未考勤课程",
+                                text = "发现 ${report.courses.size} 节存在未考勤学员的课程",
                                 fontWeight = FontWeight.Medium,
                                 style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
                                 color = StatusLateInk
                             )
                             Text(
-                                text = "可一键考勤 ${report.submittableCount} 节，共 ${report.totalStudentCount} 人次",
+                                text = "已勾选 $selectedCourseCount 节，共 $selectedStudentCount 人次",
                                 style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
                                 color = StatusLateInk
                             )
                         }
                     }
                     report.courses.forEach { course ->
-                        TmsMissingCourseCard(course)
+                        val selectedIds = selectedIdsByCourse[course.courseId].orEmpty()
+                        TmsMissingCourseCard(
+                            course = course,
+                            selectedIds = selectedIds,
+                            onToggleStudent = { studentId ->
+                                val updated = if (studentId in selectedIds) {
+                                    selectedIds - studentId
+                                } else {
+                                    selectedIds + studentId
+                                }
+                                selectedIdsByCourse = selectedIdsByCourse + (course.courseId to updated)
+                            },
+                            onToggleAll = {
+                                val allIds = course.missingStudents.map { it.tmsStudentId }.toSet()
+                                val updated = if (selectedIds.size == allIds.size) emptySet() else allIds
+                                selectedIdsByCourse = selectedIdsByCourse + (course.courseId to updated)
+                            }
+                        )
                     }
                 }
 
@@ -1999,7 +2043,7 @@ private fun TmsMissingReportDialog(
                 }
 
                 Text(
-                    text = "一键考勤会直接读取校管家课程学员名单，全部标记为已出勤并计费，不依赖本地名单匹配，因此名单对不上也能完成考勤。",
+                    text = "已默认勾选「未点名」学员，「请假/事假」学员默认不勾选；可按需勾选或取消勾选，未勾选的学员会保留原状态。",
                     style = MaterialTheme.typography.labelSmall,
                     color = InkTertiary
                 )
@@ -2009,12 +2053,13 @@ private fun TmsMissingReportDialog(
             if (report.canSubmit) {
                 Button(
                     onClick = { showConfirm = true },
+                    enabled = selectedStudentCount > 0,
                     colors = ButtonDefaults.buttonColors(containerColor = InkPrimary)
                 ) {
                     Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(Spacing.Sm))
                     Text(
-                        "一键考勤 (${report.submittableCount})",
+                        "考勤所选 ($selectedStudentCount)",
                         style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum")
                     )
                 }
@@ -2034,7 +2079,7 @@ private fun TmsMissingReportDialog(
     if (showConfirm) {
         AlertDialog(
             onDismissRequest = { showConfirm = false },
-            title = { Text("确认一键考勤？") },
+            title = { Text("确认考勤所选学员？") },
             text = {
                 Column(
                     modifier = Modifier
@@ -2044,19 +2089,20 @@ private fun TmsMissingReportDialog(
                     verticalArrangement = Arrangement.spacedBy(Spacing.Sm)
                 ) {
                     Text(
-                        text = "将把以下 ${report.submittableCount} 节课的校管家学员全部标记为已出勤并计费，共 ${report.totalStudentCount} 人次。",
+                        text = "将把以下 $selectedCourseCount 节课中共 $selectedStudentCount 人次标记为已出勤并计费（未勾选的学员保持原状态）：",
                         style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
                         color = InkSecondary
                     )
-                    report.submittableCourses.forEach { course ->
+                    selectedCourses.forEach { (course, students) ->
+                        val names = students.joinToString("、") { it.displayName }
                         Text(
-                            text = "• ${course.date} ${course.className} ${course.displayTime}（${course.studentCount} 人）",
+                            text = "• ${course.date} ${course.className} ${course.displayTime}（${students.size} 人：$names）",
                             style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
                             color = InkSecondary
                         )
                     }
                     Text(
-                        text = "该操作会直接写入校管家，无法在本应用内撤销，请确认日期和班级无误。",
+                        text = "该操作会直接写入校管家，无法在本应用内撤销，请确认日期和名单无误。",
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Medium,
                         color = StatusLateInk
@@ -2067,7 +2113,7 @@ private fun TmsMissingReportDialog(
                 Button(
                     onClick = {
                         showConfirm = false
-                        onSubmit()
+                        onSubmit(selectedIdsByCourse)
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = InkPrimary)
                 ) {
@@ -2084,15 +2130,19 @@ private fun TmsMissingReportDialog(
 }
 
 @Composable
-private fun TmsMissingCourseCard(course: TmsMissingCourse) {
+private fun TmsMissingCourseCard(
+    course: TmsMissingCourse,
+    selectedIds: Set<String>,
+    onToggleStudent: (String) -> Unit,
+    onToggleAll: () -> Unit
+) {
     val available = course.canSubmit
+    val allSelected = course.missingStudents.isNotEmpty() &&
+        selectedIds.size == course.missingStudents.size
     Surface(
         shape = RoundedCornerShape(Radii.Control),
         color = if (available) PaperBackground else PaperSunken,
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            if (available) Hairline else Hairline
-        ),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Hairline),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(Spacing.Md)) {
@@ -2105,20 +2155,85 @@ private fun TmsMissingCourseCard(course: TmsMissingCourse) {
                     modifier = Modifier.weight(1f)
                 )
                 Text(
+                    text = if (course.isPartialCourse) "部分未考勤" else "整班未考勤",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (course.isPartialCourse) InkSecondary else StatusLateInk
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
                     text = course.date,
                     style = MaterialTheme.typography.labelSmall,
                     color = InkTertiary
                 )
             }
             Spacer(modifier = Modifier.height(Spacing.Xs))
-            Text(
-                text = "${course.displayTime} · 校管家学员 ${course.studentCount} 人 · 每人课消 ${
-                    formatTmsCost(course.costAmount, course.unitCode)
-                }",
-                style = MaterialTheme.typography.bodySmall,
-                color = InkSecondary
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "${course.displayTime} · 未考勤 ${course.studentCount} 人 · 每人课消 ${
+                        formatTmsCost(course.costAmount, course.unitCode)
+                    }",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = InkSecondary,
+                    modifier = Modifier.weight(1f)
+                )
+                if (available && course.missingStudents.isNotEmpty()) {
+                    TextButton(
+                        onClick = onToggleAll,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                            horizontal = 8.dp,
+                            vertical = 2.dp
+                        ),
+                        modifier = Modifier.height(28.dp)
+                    ) {
+                        Text(
+                            text = if (allSelected) "全不选" else "全选",
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                }
+            }
+            if (course.missingStudents.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(Spacing.Xs))
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    course.missingStudents.forEach { student ->
+                        val checked = student.tmsStudentId in selectedIds
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(enabled = available) {
+                                    onToggleStudent(student.tmsStudentId)
+                                }
+                                .padding(vertical = 2.dp)
+                        ) {
+                            Checkbox(
+                                checked = checked,
+                                onCheckedChange = if (available) {
+                                    { onToggleStudent(student.tmsStudentId) }
+                                } else {
+                                    null
+                                },
+                                enabled = available,
+                                modifier = Modifier.size(32.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = student.displayName,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = InkPrimary,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                text = student.statusLabel,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (student.isLeave) InkTertiary else StatusLateInk
+                            )
+                        }
+                    }
+                }
+            }
             if (course.message != null) {
+                Spacer(modifier = Modifier.height(Spacing.Xs))
                 Text(
                     text = course.message,
                     style = MaterialTheme.typography.labelSmall,

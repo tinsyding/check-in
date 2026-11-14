@@ -55,11 +55,16 @@ import com.jf.checkin.ui.theme.InkTertiary
 import com.jf.checkin.ui.theme.PaperSurface
 import com.jf.checkin.ui.theme.Radii
 import com.jf.checkin.ui.theme.RedPen
+import com.jf.checkin.ui.theme.RedPenSoft
 import com.jf.checkin.ui.theme.Sizes
 import com.jf.checkin.ui.theme.Spacing
+import com.jf.checkin.ui.theme.StatusLateBg
 import com.jf.checkin.ui.theme.StatusLateInk
+import com.jf.checkin.ui.theme.StatusLeaveBg
 import com.jf.checkin.ui.theme.StatusLeaveInk
+import com.jf.checkin.ui.theme.StatusLeaveReplayBg
 import com.jf.checkin.ui.theme.StatusLeaveReplayInk
+import com.jf.checkin.ui.theme.StatusOnlineBg
 import com.jf.checkin.ui.theme.StatusOnlineInk
 import com.jf.checkin.ui.theme.StatusUncheckedInk
 
@@ -80,10 +85,14 @@ fun StudentCard(
     val status = statusVisualFor(student)
 
     Box(modifier = modifier) {
+        val isUnchecked = student.status == AttendanceStatus.UNCHECKED
         Card(
             shape = RoundedCornerShape(Radii.Card),
-            colors = CardDefaults.cardColors(containerColor = PaperSurface),
-            border = BorderStroke(1.dp, status.accent.copy(alpha = 0.32f)),
+            colors = CardDefaults.cardColors(containerColor = status.cardBg),
+            border = BorderStroke(
+                width = if (isUnchecked) 1.dp else 1.5.dp,
+                color = status.accent.copy(alpha = if (isUnchecked) 0.30f else 0.55f)
+            ),
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
             modifier = Modifier
                 .fillMaxWidth()
@@ -163,11 +172,15 @@ fun StudentCard(
                             .background(status.accent.copy(alpha = 0.22f))
                     )
 
-                    // 状态页脚：淡色底 + 图标 + 状态名，远看也能区分
+                    // 状态页脚：较深淡色底 + 图标 + 状态名，远看也能一眼区分
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(status.accent.copy(alpha = 0.10f))
+                            .background(
+                                status.accent.copy(
+                                    alpha = if (student.status == AttendanceStatus.UNCHECKED) 0.08f else 0.18f
+                                )
+                            )
                             .padding(horizontal = Spacing.Sm, vertical = Spacing.Xs),
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
@@ -297,6 +310,7 @@ fun StudentCard(
 private data class StatusVisual(
     val label: String,
     val accent: Color,
+    val cardBg: Color,
     val icon: ImageVector
 )
 
@@ -304,31 +318,37 @@ private fun statusVisualFor(student: Student): StatusVisual = when (student.stat
     AttendanceStatus.PRESENT -> StatusVisual(
         label = "已到",
         accent = RedPen,
+        cardBg = RedPenSoft,
         icon = Icons.Default.Check
     )
     AttendanceStatus.LATE -> StatusVisual(
         label = "迟到",
         accent = StatusLateInk,
+        cardBg = StatusLateBg,
         icon = Icons.Default.Schedule
     )
     AttendanceStatus.LEAVE -> StatusVisual(
         label = "请假 · 无回放",
         accent = StatusLeaveInk,
+        cardBg = StatusLeaveBg,
         icon = Icons.Default.EventBusy
     )
     AttendanceStatus.LEAVE_REPLAY -> StatusVisual(
         label = "请假 · 回放",
         accent = StatusLeaveReplayInk,
+        cardBg = StatusLeaveReplayBg,
         icon = Icons.Default.PlayCircle
     )
     AttendanceStatus.ONLINE -> StatusVisual(
         label = if (StudentCsvParser.isOfflineStudent(student)) "转线上" else "线上",
         accent = StatusOnlineInk,
+        cardBg = StatusOnlineBg,
         icon = Icons.Default.Videocam
     )
     AttendanceStatus.UNCHECKED -> StatusVisual(
         label = "未到",
         accent = StatusUncheckedInk,
+        cardBg = PaperSurface,
         icon = Icons.Default.RadioButtonUnchecked
     )
 }

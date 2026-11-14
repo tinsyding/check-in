@@ -464,6 +464,54 @@ class TmsAttendanceMapperTest {
         assertTrue(report.canSubmit)
     }
 
+    @Test
+    fun toMissingStudentIncludesUnpointedAndLeaveAndSkipsAttended() {
+        assertNull(
+            TmsAttendanceMapper.toMissingStudent(
+                id = "s1",
+                rawName = "1001 张三",
+                isAttend = 1,
+                isCost = 1.0,
+                attendStatus = 0,
+                absentCauseName = ""
+            )
+        )
+        assertNull(
+            TmsAttendanceMapper.toMissingStudent(
+                id = "s2",
+                rawName = "1002 李四",
+                isAttend = 0,
+                isCost = 1.0,
+                attendStatus = 0,
+                absentCauseName = ""
+            )
+        )
+
+        val unpointed = TmsAttendanceMapper.toMissingStudent(
+            id = "s3",
+            rawName = "1003 王五",
+            isAttend = 0,
+            isCost = 0.0,
+            attendStatus = 0,
+            absentCauseName = ""
+        )!!
+        assertEquals("王五", unpointed.displayName)
+        assertEquals("未点名", unpointed.statusLabel)
+        assertFalse(unpointed.isLeave)
+
+        val leave = TmsAttendanceMapper.toMissingStudent(
+            id = "s4",
+            rawName = "1004 赵六",
+            isAttend = 0,
+            isCost = 0.0,
+            attendStatus = 1,
+            absentCauseName = "事假"
+        )!!
+        assertEquals("赵六", leave.displayName)
+        assertEquals("事假", leave.statusLabel)
+        assertTrue(leave.isLeave)
+    }
+
     private fun tmsMatch(status: AttendanceStatus) = TmsStudentMatch(
         appStudentId = "app-1",
         appName = "学生A",

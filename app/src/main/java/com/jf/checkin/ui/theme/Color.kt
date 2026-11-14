@@ -33,10 +33,10 @@ val InkTertiary = Color(0xFF6E6455)
 val InkOnDark = Color(0xFFFFFDF8)
 
 /** 红笔：已到 / 当前班 / 主品牌强调 */
-val RedPen = Color(0xFFA63A1E)
+val RedPen = Color(0xFFC0392B)
 
 /** 红笔淡底 */
-val RedPenSoft = Color(0xFFF7E7E0)
+val RedPenSoft = Color(0xFFFDECEA)
 
 /** 危险操作 */
 val Danger = Color(0xFFB3261E)
@@ -47,9 +47,15 @@ val DangerSoft = Color(0xFFFBEAE8)
 /** 状态徽章/中性 chip 底色 */
 val BadgeBackground = Color(0xFFF2EEE6)
 
-// 语义状态色：只做圆点、4dp 边和文字强调，统一收进暖纸低饱和色域
-val StatusLateInk = Color(0xFF9A4708)
-val StatusLeaveInk = Color(0xFF2B4C7E)
+// 语义状态色：拉开各状态色相与明度差异，便于点名网格快速区分
+val StatusLateInk = Color(0xFFD97706)
+val StatusLeaveInk = Color(0xFF1D4ED8)
 val StatusLeaveReplayInk = Color(0xFF0F766E)
-val StatusOnlineInk = Color(0xFF5B4B7A)
-val StatusUncheckedInk = Color(0xFF6F6559)
+val StatusOnlineInk = Color(0xFF7C3AED)
+val StatusUncheckedInk = Color(0xFF64748B)
+
+// 卡片状态浅底色
+val StatusLateBg = Color(0xFFFEF3C7)
+val StatusLeaveBg = Color(0xFFDBEAFE)
+val StatusLeaveReplayBg = Color(0xFFCCFBF1)
+val StatusOnlineBg = Color(0xFFEDE9FE)

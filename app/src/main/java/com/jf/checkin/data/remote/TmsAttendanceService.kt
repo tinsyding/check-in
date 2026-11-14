@@ -168,10 +168,20 @@ data class TmsCourseResult(
 )
 
 /**
- * 校管家中尚未点名的一节课。
+ * 校管家中尚未出勤考勤的一名学员（含未点名与请假/缺勤等未出勤状态）。
+ */
+data class TmsMissingStudent(
+    val tmsStudentId: String,
+    val rawName: String,
+    val displayName: String,
+    val statusLabel: String,
+    val isLeave: Boolean
+)
+
+/**
+ * 校管家中存在未考勤学员的一节课（包含整班未点名和部分学员未出勤）。
  *
- * “一键考勤”直接按校管家课程学员名单全员出勤，不依赖本地名单匹配，
- * 因此即使本地 CSV 与校管家名单对不上也能完成考勤。
+ * 支持勾选具体需要考勤的学员并按校管家名单提交出勤计费，不依赖本地名单匹配。
  */
 data class TmsMissingCourse(
     val date: String,
@@ -183,7 +193,9 @@ data class TmsMissingCourse(
     val attendanceDetailJson: String,
     val costAmount: Double,
     val unitCode: Int,
-    val message: String? = null
+    val message: String? = null,
+    val missingStudents: List<TmsMissingStudent> = emptyList(),
+    val isPartialCourse: Boolean = false
 ) {
     val displayTime: String
         get() = TmsAttendanceMapper.displayTime(startTime, endTime)
@@ -225,7 +237,7 @@ class TmsAttendanceService {
     private val sessionLock = Any()
     @Volatile private var session: TmsSession? = null
     @Volatile private var schoolHost: String = ""
-    @Volatile private var campusId: String = ""
+    @Volatile private var campusIds: List<String> = emptyList()
     @Volatile private var cachedUsername: String = ""
     @Volatile private var cachedPassword: String = ""
 
@@ -398,30 +410,36 @@ class TmsAttendanceService {
         val now = LocalDateTime.now()
         var consideredCount = 0
         var matchedClassCourseCount = 0
+        var upcomingCount = 0
 
         for (course in courses) {
             if (TmsAttendanceMapper.classNameKey(course.className) !in allowedKeys) continue
             matchedClassCourseCount++
             // 今天还没开始的课不参与检查，避免把未来课程当成“漏考勤”提前提交。
             val start = TmsAttendanceMapper.tmsDateTime(course.startTime)
-            if (start != null && start.isAfter(now)) continue
+            if (start != null && start.isAfter(now)) {
+                upcomingCount++
+                continue
+            }
             consideredCount++
 
             val everPointed = course.attendanceCount > 0 ||
                 TmsAttendanceMapper.hasAttendanceTime(course.lastAttendTime)
-            if (everPointed) continue
 
             val detail = fetchAttendance(activeSession, course.id)
             val tmsStudents = detail.optJSONArray("students") ?: JSONArray()
             if (tmsStudents.length() == 0) {
-                warnings += "${course.className}（${TmsAttendanceMapper.tmsDate(course.startTime)}）校管家课程中没有学员，已跳过"
-                continue
-            }
-            if (hasExistingRecord(tmsStudents)) {
-                warnings += "${course.className}（${TmsAttendanceMapper.tmsDate(course.startTime)}）已有部分点名/计费记录，已跳过"
+                if (!everPointed) {
+                    warnings += "${course.className}（${TmsAttendanceMapper.tmsDate(course.startTime)}）校管家课程中没有学员，已跳过"
+                }
                 continue
             }
 
+            val missingStudents = TmsAttendanceMapper.extractMissingStudents(tmsStudents)
+            if (missingStudents.isEmpty()) continue
+
+            val attendedCount = (tmsStudents.length() - missingStudents.size).coerceAtLeast(0)
+            val isPartial = everPointed || attendedCount > 0
             val cost = TmsAttendanceMapper.computeCost(course)
             missing += TmsMissingCourse(
                 date = TmsAttendanceMapper.tmsDate(course.startTime),
@@ -429,11 +447,13 @@ class TmsAttendanceService {
                 className = course.className,
                 startTime = course.startTime,
                 endTime = course.endTime,
-                studentCount = tmsStudents.length(),
+                studentCount = missingStudents.size,
                 attendanceDetailJson = detail.toString(),
                 costAmount = cost,
                 unitCode = course.unitCode,
-                message = if (cost <= 0.0) "课消为 0，无法一键考勤，请在校管家网页手动处理" else null
+                message = if (cost <= 0.0) "课消为 0，无法一键考勤，请在校管家网页手动处理" else null,
+                missingStudents = missingStudents,
+                isPartialCourse = isPartial
             )
         }
 
@@ -443,6 +463,8 @@ class TmsAttendanceService {
             warnings += "校管家课程中没有找到当前名单的班级，请确认班级号/班型是否一致"
         } else if (consideredCount == 0) {
             warnings += "检查范围内只有尚未开始的课程，今天稍后开始后再检查即可"
+        } else if (upcomingCount > 0) {
+            warnings += "另有 $upcomingCount 节今日尚未开始的课程未计入检查"
         }
 
         TmsMissingReport(
@@ -458,24 +480,30 @@ class TmsAttendanceService {
     }
 
     /**
-     * 一键考勤：把报告中每节课的校管家学员全部标记为已出勤并计费。
+     * 一键考勤：把报告中所选校管家学员标记为已出勤并计费；未勾选的学员保持原状态不变。
      * 完全基于校管家名单，不需要本地名单匹配。
      */
     suspend fun submitMissingAttendance(
         report: TmsMissingReport,
-        credentials: TmsCredentials
+        credentials: TmsCredentials,
+        selectedStudentIdsByCourse: Map<String, Set<String>>? = null
     ): List<TmsCourseResult> = withContext(Dispatchers.IO) {
         val activeSession = ensureSession(credentials)
         val results = mutableListOf<TmsCourseResult>()
         for (course in report.submittableCourses) {
-            results += submitAllPresent(activeSession, course)
+            val selectedIds = selectedStudentIdsByCourse?.get(course.courseId)
+            if (selectedStudentIdsByCourse != null && selectedIds.isNullOrEmpty()) {
+                continue
+            }
+            results += submitSelectedPresent(activeSession, course, selectedIds)
         }
         results
     }
 
-    private fun submitAllPresent(
+    private fun submitSelectedPresent(
         session: TmsSession,
-        course: TmsMissingCourse
+        course: TmsMissingCourse,
+        selectedIds: Set<String>?
     ): TmsCourseResult {
         return try {
             val detail = JSONObject(course.attendanceDetailJson)
@@ -493,6 +521,7 @@ class TmsAttendanceService {
                 val student = students.optJSONObject(index) ?: return@mapNotNull null
                 val id = student.optCleanString("ID")
                 if (id.isBlank()) return@mapNotNull null
+                if (selectedIds != null && id !in selectedIds) return@mapNotNull null
                 val rawName = student.optCleanString("Name")
                 val (_, name) = TmsAttendanceMapper.studentNumberAndName(rawName)
                 TmsStudentMatch(
@@ -951,7 +980,7 @@ class TmsAttendanceService {
         synchronized(sessionLock) {
             session = null
             schoolHost = ""
-            campusId = ""
+            campusIds = emptyList()
             cachedUsername = ""
             cachedPassword = ""
         }
@@ -970,69 +999,74 @@ class TmsAttendanceService {
         endDate: LocalDate = startDate,
         includeFinished: Boolean = false
     ): List<TmsCourseSummary> {
-        val params = linkedMapOf(
-            "Campus" to campusId,
-            "PageSize" to "10000",
-            "PageIndex" to "1",
-            "startDate" to startDate.toString(),
-            "endDate" to endDate.toString(),
-            "finished" to "-1",
-            "shiftType" to "7",
-            "byterm" to "1",
-            "sort" to "StartTime",
-            "desc" to "0",
-            "Forenoon" to "1",
-            "Afternoon" to "1",
-            "Nightnoon" to "1",
-            "IsContainFinished" to if (includeFinished) "1" else "0",
-            "courseFlag" to ""
-        )
-        val response = try {
-            session.getJson(
-                "https://$schoolHost/api/Course/query?" + TmsAttendanceMapper.encodeForm(params)
+        val seenIds = mutableSetOf<String>()
+        val allCourses = mutableListOf<TmsCourseSummary>()
+        for (campusId in campusIds) {
+            val params = linkedMapOf(
+                "Campus" to campusId,
+                "PageSize" to "10000",
+                "PageIndex" to "1",
+                "startDate" to startDate.toString(),
+                "endDate" to endDate.toString(),
+                "finished" to "-1",
+                "shiftType" to "7",
+                "byterm" to "1",
+                "sort" to "StartTime",
+                "desc" to "0",
+                "Forenoon" to "1",
+                "Afternoon" to "1",
+                "Nightnoon" to "1",
+                "IsContainFinished" to if (includeFinished) "1" else "0",
+                "courseFlag" to ""
             )
-        } catch (e: Exception) {
-            invalidateSession()
-            throw e
-        }
-        val courseQueryCode = response.optInt("ErrorCode", -1)
-        if (courseQueryCode != 200) {
-            invalidateSession()
-            throw IllegalStateException(
-                friendlyError(
-                    courseQueryCode,
-                    response.optCleanString("ErrorMsg"),
-                    "读取校管家课程失败"
+            val response = try {
+                session.getJson(
+                    "https://$schoolHost/api/Course/query?" + TmsAttendanceMapper.encodeForm(params)
                 )
-            )
+            } catch (e: Exception) {
+                invalidateSession()
+                throw e
+            }
+            val courseQueryCode = response.optInt("ErrorCode", -1)
+            if (courseQueryCode != 200) {
+                invalidateSession()
+                throw IllegalStateException(
+                    friendlyError(
+                        courseQueryCode,
+                        response.optCleanString("ErrorMsg"),
+                        "读取校管家课程失败"
+                    )
+                )
+            }
+            val array = response.optJSONArray("Data") ?: continue
+            for (index in 0 until array.length()) {
+                val course = array.optJSONObject(index) ?: continue
+                val id = course.optCleanString("ID")
+                val className = course.optCleanString("ClassName")
+                if (id.isBlank() || className.isBlank() || !seenIds.add(id)) continue
+                allCourses += TmsCourseSummary(
+                    id = id,
+                    className = className,
+                    startTime = course.optCleanString("StartTime"),
+                    endTime = course.optCleanString("EndTime"),
+                    finished = course.optInt("Finished", 0),
+                    attendanceCount = course.optInt("AttendanceCount", 0),
+                    lastAttendTime = course.optCleanString("LastAttendTime"),
+                    studentCount = course.optInt("StudentCount", 0),
+                    unitCode = course.optInt("Unit", 2),
+                    durationMinutes = TmsAttendanceMapper.durationMinutes(course.optCleanString("Duration")),
+                    minutesToTimes = course.optInt("MinutesToTimes", 0),
+                    standardMinutes = course.optDouble("StandardMinutes", 0.0).let {
+                        if (it.isNaN()) 0.0 else it
+                    },
+                    consumeAmount = course.optDouble("ConsumeAmount", 1.0).let {
+                        if (it.isNaN()) 1.0 else it
+                    },
+                    isDynamicConsume = course.optInt("IsDynamicConsume", 0) == 1
+                )
+            }
         }
-        val array = response.optJSONArray("Data") ?: return emptyList()
-        return (0 until array.length()).mapNotNull { index ->
-            val course = array.optJSONObject(index) ?: return@mapNotNull null
-            val id = course.optCleanString("ID")
-            val className = course.optCleanString("ClassName")
-            if (id.isBlank() || className.isBlank()) return@mapNotNull null
-            TmsCourseSummary(
-                id = id,
-                className = className,
-                startTime = course.optCleanString("StartTime"),
-                endTime = course.optCleanString("EndTime"),
-                finished = course.optInt("Finished", 0),
-                attendanceCount = course.optInt("AttendanceCount", 0),
-                lastAttendTime = course.optCleanString("LastAttendTime"),
-                studentCount = course.optInt("StudentCount", 0),
-                unitCode = course.optInt("Unit", 2),
-                durationMinutes = TmsAttendanceMapper.durationMinutes(course.optCleanString("Duration")),
-                minutesToTimes = course.optInt("MinutesToTimes", 0),
-                standardMinutes = course.optDouble("StandardMinutes", 0.0).let {
-                    if (it.isNaN()) 0.0 else it
-                },
-                consumeAmount = course.optDouble("ConsumeAmount", 1.0).let {
-                    if (it.isNaN()) 1.0 else it
-                },
-                isDynamicConsume = course.optInt("IsDynamicConsume", 0) == 1
-            )
-        }
+        return allCourses
     }
 
     private fun fetchAttendance(session: TmsSession, courseId: String): JSONObject {
@@ -1201,15 +1235,20 @@ class TmsAttendanceService {
         }
         val data = whoami.optJSONObject("Data")
             ?: throw IllegalStateException("校管家没有返回用户信息")
-        val campus = data.optJSONArray("CampusList")?.optJSONObject(0)
-            ?: throw IllegalStateException("校管家账号没有可用校区")
-        val id = campus.optCleanString("ID")
-        if (id.isBlank()) {
+        val campusArray = data.optJSONArray("CampusList")
+        val ids = if (campusArray == null) {
+            emptyList()
+        } else {
+            (0 until campusArray.length()).mapNotNull { index ->
+                campusArray.optJSONObject(index)?.optCleanString("ID")?.takeIf { it.isNotBlank() }
+            }.distinct()
+        }
+        if (ids.isEmpty()) {
             throw IllegalStateException("校管家账号没有可用校区")
         }
 
         schoolHost = host
-        campusId = id
+        campusIds = ids
         cachedUsername = credentials.username
         cachedPassword = credentials.password
         session = newSession
@@ -1423,6 +1462,53 @@ internal object TmsAttendanceMapper {
         if (value.startsWith("0001-01-01")) return false
         if (value.contains("-62135596800000")) return false
         return true
+    }
+
+    /**
+     * 从校管家课程学员列表中提取所有尚未出勤考勤的学员（含未点名与请假/缺勤等）。
+     */
+    fun extractMissingStudents(tmsStudents: JSONArray): List<TmsMissingStudent> {
+        val result = mutableListOf<TmsMissingStudent>()
+        for (index in 0 until tmsStudents.length()) {
+            val student = tmsStudents.optJSONObject(index) ?: continue
+            toMissingStudent(
+                id = student.optCleanString("ID"),
+                rawName = student.optCleanString("Name"),
+                isAttend = student.optInt("IsAttend", 0),
+                isCost = student.optDouble("IsCost", 0.0).let { if (it.isNaN()) 0.0 else it },
+                attendStatus = student.optInt("IsAttendStauts", 0),
+                absentCauseName = student.optCleanString("AbsentCauseName")
+            )?.let { result += it }
+        }
+        return result
+    }
+
+    fun toMissingStudent(
+        id: String,
+        rawName: String,
+        isAttend: Int,
+        isCost: Double,
+        attendStatus: Int,
+        absentCauseName: String
+    ): TmsMissingStudent? {
+        if (id.isBlank()) return null
+        if (isAttend != 0 || isCost > 0.0) return null
+
+        val absentCause = absentCauseName.trim()
+        val isLeave = attendStatus != 0 || absentCause.isNotEmpty()
+        val statusLabel = when {
+            absentCause.isNotEmpty() -> absentCause
+            attendStatus != 0 -> "请假"
+            else -> "未点名"
+        }
+        val (_, parsedName) = studentNumberAndName(rawName)
+        return TmsMissingStudent(
+            tmsStudentId = id,
+            rawName = rawName,
+            displayName = parsedName.ifBlank { rawName },
+            statusLabel = statusLabel,
+            isLeave = isLeave
+        )
     }
 
     fun studentNumberAndName(raw: String): Pair<String, String> {
