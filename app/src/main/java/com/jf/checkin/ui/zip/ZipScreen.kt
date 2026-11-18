@@ -73,6 +73,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -90,6 +91,8 @@ import com.jf.checkin.ui.theme.Spacing
 import com.jf.checkin.util.ShareUtil
 import java.io.File
 
+private val PRESET_MULTIPLIERS = listOf(1, 2, 5, 10)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ZipScreen(
@@ -100,6 +103,7 @@ fun ZipScreen(
     onNameChange: (String) -> Unit,
     onCustomNameChange: (String) -> Unit,
     onToggleCustomName: (Boolean) -> Unit,
+    onSizeMultiplierChange: (Int) -> Unit = {},
     onGenerate: () -> Unit,
     onBack: () -> Unit,
     onMessageShown: () -> Unit,
@@ -192,9 +196,11 @@ fun ZipScreen(
                     name = state.name,
                     customNameEnabled = state.customNameEnabled,
                     customName = state.customName,
+                    sizeMultiplier = state.sizeMultiplier,
                     onNameChange = onNameChange,
                     onCustomNameChange = onCustomNameChange,
                     onToggleCustomName = onToggleCustomName,
+                    onSizeMultiplierChange = onSizeMultiplierChange,
                 )
 
                 SectionHeader(
@@ -254,9 +260,11 @@ private fun ArchiveCard(
     name: String,
     customNameEnabled: Boolean,
     customName: String,
+    sizeMultiplier: Int,
     onNameChange: (String) -> Unit,
     onCustomNameChange: (String) -> Unit,
     onToggleCustomName: (Boolean) -> Unit,
+    onSizeMultiplierChange: (Int) -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -321,6 +329,126 @@ private fun ArchiveCard(
                         fontFamily = FontFamily.Monospace,
                     )
                 }
+            }
+
+            Spacer(modifier = Modifier.height(Spacing.Lg))
+            HorizontalDivider(thickness = 1.dp, color = Hairline)
+            Spacer(modifier = Modifier.height(Spacing.Md))
+
+            SizeMultiplierRow(
+                multiplier = sizeMultiplier,
+                onMultiplierChange = onSizeMultiplierChange,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SizeMultiplierRow(
+    multiplier: Int,
+    onMultiplierChange: (Int) -> Unit,
+) {
+    val focusManager = LocalFocusManager.current
+    var textValue by remember(multiplier) { mutableStateOf(multiplier.toString()) }
+    var focused by remember { mutableStateOf(false) }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "体积倍数",
+            style = MaterialTheme.typography.labelMedium,
+            color = InkTertiary,
+        )
+        Spacer(modifier = Modifier.weight(1f))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(Spacing.Xs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            PRESET_MULTIPLIERS.forEach { preset ->
+                val selected = multiplier == preset && !focused
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(Radii.Chip))
+                        .background(if (selected) InkPrimary else PaperSunken)
+                        .border(
+                            width = 1.dp,
+                            color = if (selected) InkPrimary else Hairline,
+                            shape = RoundedCornerShape(Radii.Chip),
+                        )
+                        .clickable {
+                            focusManager.clearFocus()
+                            onMultiplierChange(preset)
+                        }
+                        .padding(horizontal = Spacing.Sm, vertical = Spacing.Xs),
+                ) {
+                    Text(
+                        text = "${preset}×",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Medium,
+                            fontFeatureSettings = "tnum",
+                        ),
+                        color = if (selected) InkOnDark else InkSecondary,
+                    )
+                }
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .background(PaperSunken, RoundedCornerShape(Radii.Chip))
+                    .border(
+                        width = 1.dp,
+                        color = if (focused || multiplier !in PRESET_MULTIPLIERS) InkPrimary else Hairline,
+                        shape = RoundedCornerShape(Radii.Chip),
+                    )
+                    .padding(horizontal = Spacing.Sm, vertical = Spacing.Xs),
+            ) {
+                BasicTextField(
+                    value = textValue,
+                    onValueChange = { raw ->
+                        val digits = raw.filter { it.isDigit() }.take(4)
+                        textValue = digits
+                        digits.toIntOrNull()?.let { parsed ->
+                            if (parsed >= 1) onMultiplierChange(parsed)
+                        }
+                    },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Medium,
+                        color = InkPrimary,
+                        fontFeatureSettings = "tnum",
+                    ),
+                    cursorBrush = SolidColor(InkPrimary),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Done,
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onDone = {
+                            if (textValue.isBlank()) textValue = multiplier.toString()
+                            focusManager.clearFocus()
+                        },
+                    ),
+                    modifier = Modifier
+                        .width(26.dp)
+                        .onFocusChanged { state ->
+                            focused = state.isFocused
+                            if (!state.isFocused && textValue.isBlank()) {
+                                textValue = multiplier.toString()
+                            }
+                        },
+                )
+                Text(
+                    text = "×",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                    ),
+                    color = InkTertiary,
+                )
             }
         }
     }
@@ -708,6 +836,7 @@ private fun BottomAction(
 @Composable
 private fun ReadySummary(archive: ReadyArchive) {
     val context = LocalContext.current
+    val multiplierSuffix = if (archive.sizeMultiplier > 1) " · ${archive.sizeMultiplier}×" else ""
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -724,7 +853,7 @@ private fun ReadySummary(archive: ReadyArchive) {
             Text(
                 text = "${archive.count} 张 · ${
                     Formatter.formatShortFileSize(context, archive.size)
-                }",
+                }$multiplierSuffix",
                 style = MaterialTheme.typography.labelSmall.copy(
                     fontFamily = FontFamily.Monospace,
                     fontFeatureSettings = "tnum",

@@ -39,6 +39,7 @@ class ZipActivity : ComponentActivity() {
                     onNameChange = viewModel::setName,
                     onCustomNameChange = viewModel::setCustomName,
                     onToggleCustomName = viewModel::setCustomNameEnabled,
+                    onSizeMultiplierChange = viewModel::setSizeMultiplier,
                     onGenerate = viewModel::generate,
                     onBack = { finish() },
                     onMessageShown = viewModel::dismissMessage,

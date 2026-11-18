@@ -679,6 +679,75 @@ fun SettingsScreen(
                 }
             }
 
+            // ── 图片打包 ───────────────────────────────────────
+            SettingsSection(title = "图片打包") {
+                var zipMultiplierInput by remember {
+                    mutableStateOf(prefRepository.zipSizeMultiplier.toString())
+                }
+                val presetMultipliers = listOf(1, 2, 5, 10, 50, 100)
+
+                SettingsCard {
+                    Text(
+                        text = "压缩包体积放大倍数",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = InkPrimary
+                    )
+                    Text(
+                        text = "通过向 ZIP 内部未引用区填充字节放大压缩包体积。不添加任何多余文件，解压后的每张图片大小与内容均保持原样（1 倍为原始体积）。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = InkTertiary
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.Xs)
+                    ) {
+                        presetMultipliers.forEach { preset ->
+                            val selected = zipMultiplierInput == preset.toString()
+                            Surface(
+                                shape = RoundedCornerShape(Radii.Chip),
+                                color = if (selected) InkPrimary else PaperSunken,
+                                border = BorderStroke(1.dp, if (selected) InkPrimary else Hairline),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable {
+                                        zipMultiplierInput = preset.toString()
+                                        prefRepository.zipSizeMultiplier = preset
+                                    }
+                            ) {
+                                Text(
+                                    text = "${preset}×",
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        fontFeatureSettings = "tnum"
+                                    ),
+                                    color = if (selected) InkOnDark else InkSecondary,
+                                    modifier = Modifier.padding(vertical = Spacing.Sm),
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = zipMultiplierInput,
+                        onValueChange = { raw ->
+                            val digits = raw.filter { it.isDigit() }.take(4)
+                            zipMultiplierInput = digits
+                            digits.toIntOrNull()?.let { parsed ->
+                                if (parsed >= 1) {
+                                    prefRepository.zipSizeMultiplier = parsed
+                                }
+                            }
+                        },
+                        label = { Text("自定义倍数（1 ~ 9999，默认 1）") },
+                        suffix = { Text("倍") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+
             // ── 错题快速转换 ───────────────────────────────────
             SettingsSection(title = "错题快速转换") {
                 HomeworkSettingsCard(prefRepository = prefRepository)

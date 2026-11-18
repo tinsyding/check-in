@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 
 const val MAX_ZIP_IMAGES = 100
+const val MAX_ZIP_SIZE_MULTIPLIER = 9999
 
 private const val EXPORT_DIR = "zip_exports"
 
@@ -31,6 +32,7 @@ data class ReadyArchive(
     val name: String,
     val size: Long,
     val count: Int,
+    val sizeMultiplier: Int = 1,
 )
 
 sealed interface BuildState {
@@ -47,6 +49,7 @@ data class ZipUiState(
     val prefix: String = datePrefix(),
     val customNameEnabled: Boolean = false,
     val customName: String = "",
+    val sizeMultiplier: Int = 1,
     val autoSharePending: Boolean = false,
     val build: BuildState = BuildState.Idle,
     val message: String? = null,
@@ -66,10 +69,12 @@ class ZipViewModel(application: Application) : AndroidViewModel(application) {
     init {
         clearExports()
         val savedName = prefs.zipDefaultName.ifBlank { prefs.teacherName }
+        val savedMultiplier = prefs.zipSizeMultiplier
         _state.update { current ->
             current.copy(
                 defaultName = savedName,
                 name = if (current.nameEdited) current.name else savedName,
+                sizeMultiplier = savedMultiplier,
             )
         }
     }
@@ -102,11 +107,26 @@ class ZipViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshDate() {
         val today = datePrefix()
+        val savedMultiplier = prefs.zipSizeMultiplier
         _state.update { current ->
-            if (current.build is BuildState.Ready || current.prefix == today) {
+            val nextPrefix = if (current.build is BuildState.Ready || current.prefix == today) {
+                current.prefix
+            } else {
+                today
+            }
+            val multiplierChanged = savedMultiplier != current.sizeMultiplier
+            if (nextPrefix == current.prefix && !multiplierChanged) {
                 current
             } else {
-                current.copy(prefix = today)
+                current.copy(
+                    prefix = nextPrefix,
+                    sizeMultiplier = savedMultiplier,
+                    build = if (multiplierChanged && current.build is BuildState.Ready) {
+                        BuildState.Idle
+                    } else {
+                        current.build
+                    },
+                )
             }
         }
     }
@@ -194,6 +214,21 @@ class ZipViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun setSizeMultiplier(multiplier: Int) {
+        val clamped = multiplier.coerceIn(1, MAX_ZIP_SIZE_MULTIPLIER)
+        prefs.zipSizeMultiplier = clamped
+        _state.update { current ->
+            if (clamped == current.sizeMultiplier) {
+                current
+            } else {
+                current.copy(
+                    sizeMultiplier = clamped,
+                    build = if (current.build is BuildState.Ready) BuildState.Idle else current.build,
+                )
+            }
+        }
+    }
+
     fun dismissMessage() {
         _state.update { it.copy(message = null) }
     }
@@ -234,7 +269,13 @@ class ZipViewModel(application: Application) : AndroidViewModel(application) {
 
             val output = File(directory, fileName)
             try {
-                ImageZipBuilder.build(resolver, snapshot.uris, prefix, output) { done ->
+                ImageZipBuilder.build(
+                    resolver = resolver,
+                    uris = snapshot.uris,
+                    prefix = prefix,
+                    output = output,
+                    sizeMultiplier = snapshot.sizeMultiplier,
+                ) { done ->
                     _state.update { current ->
                         val building = current.build
                         if (building is BuildState.Building) {
@@ -258,6 +299,7 @@ class ZipViewModel(application: Application) : AndroidViewModel(application) {
                                 name = fileName,
                                 size = output.length(),
                                 count = snapshot.uris.size,
+                                sizeMultiplier = snapshot.sizeMultiplier,
                             ),
                         ),
                     )

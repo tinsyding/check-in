@@ -23,6 +23,7 @@ class UserPrefRepository(context: Context) {
         private const val KEY_LAST_IMPORT_TIME = "jf_last_import_time"
         private const val KEY_TEACHER_NAME = "jf_teacher_name"
         private const val KEY_ZIP_DEFAULT_NAME = "jf_zip_default_name"
+        private const val KEY_ZIP_SIZE_MULTIPLIER = "jf_zip_size_multiplier"
         private const val KEY_PRINTER_IP = "jf_printer_ip"
         private const val KEY_PRINTER_PORT = "jf_printer_port"
         private const val KEY_PRINTER_SIMPLEX = "jf_printer_simplex"
@@ -115,6 +116,11 @@ class UserPrefRepository(context: Context) {
     var zipDefaultName: String
         get() = prefs.getString(KEY_ZIP_DEFAULT_NAME, "") ?: ""
         set(value) = prefs.edit().putString(KEY_ZIP_DEFAULT_NAME, value).apply()
+
+    /** 图片打包体积放大倍数（默认 1 倍即原始体积，支持任意正整数倍数，最大 9999）。 */
+    var zipSizeMultiplier: Int
+        get() = prefs.getInt(KEY_ZIP_SIZE_MULTIPLIER, 1).coerceIn(1, 9999)
+        set(value) = prefs.edit().putInt(KEY_ZIP_SIZE_MULTIPLIER, value.coerceIn(1, 9999)).apply()
 
     // ── 错题快速转换 ─────────────────────────────────────────
     // 原 qqq 安卓端的独立 SharedPreferences 合并到这里统一管理。
